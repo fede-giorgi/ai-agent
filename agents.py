@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-api_key_1 = os.getenv("API_KEY_1")
-api_key_2 = os.getenv("API_KEY_2")
+api_key_1 = os.getenv("GOOGLE_API_KEY")
+api_key_2 = os.getenv("FINDAT_API_KEY")
 
 print(api_key_1, api_key_2)
 
