@@ -2,8 +2,18 @@
 import getpass
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+api_key_1 = os.getenv("API_KEY_1")
+api_key_2 = os.getenv("API_KEY_2")
+
+print(api_key_1, api_key_2)
+
+#%%
 if "GOOGLE_API_KEY" not in os.environ:
-    os.environ["GOOGLE_API_KEY"] = getpass.getpass("Enter your Google AI API key: ")
+    os.environ["GOOGLE_API_KEY"] = getpass.getpass("AIzaSyAe--aShl7UNp7BCjCp6s7Chyjm_bhFbY4")
 
 #%%
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -26,3 +36,4 @@ messages = [
 ]
 ai_msg = llm.invoke(messages)
 ai_msg
+# %%
