@@ -1,4 +1,3 @@
-#%%
 from langchain.messages import SystemMessage, HumanMessage
 
 from llm import get_llm
@@ -19,29 +18,24 @@ structured_llm = llm.with_structured_output(
 def run_research_agent(ticker: str, period: str = "ttm") -> FinancialSummary:
     messages = [
         SystemMessage(
-            "Se l'utente chiede come sta performando un'azienda o un titolo, "
-            "usa SEMPRE il tool `get_financials` con il ticker corretto "
-            "prima di rispondere. Non fare domande di chiarimento se il ticker è chiaro."
+            "If the user asks about how a company or stock has been performing, ALWAYS use the `get_financials` tool with the correct ticker before answering. Do not ask clarifying questions if the ticker is clearly provided. Respond only after retrieving financial data."
         ),
-        HumanMessage(f"Come sta performando {ticker} negli ultimi 12 mesi?")
+        HumanMessage(
+            f"How has {ticker} performed over the past 12 months?"
+            )
     ]
 
-    # Step 1: il modello decide i tool
     ai_msg = tool_llm.invoke(messages)
     messages.append(ai_msg)
 
-    # Step 2: esecuzione tool
     for tool_call in ai_msg.tool_calls:
         tool_result = get_financials.invoke(tool_call)
         messages.append(tool_result)
 
-    # Step 3: chiedi un riassunto strutturato
     summary_msg = HumanMessage(
-        "In base ai dati finanziari presenti nei messaggi precedenti, "
-        "riassumi la performance del titolo in modo strutturato usando lo schema."
+        "Based on the financial data contained in the previous messages, summarize the stock’s performance using the provided schema, following the exact JSON structure."
     )
 
     summary = structured_llm.invoke(messages + [summary_msg])
 
-    # summary è un dict compatibile con FinancialSummary
     return FinancialSummary(**summary)

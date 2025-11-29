@@ -11,16 +11,13 @@ def run_analysis_agent(summary: FinancialSummary, user_question: str) -> str:
 
     messages = [
         SystemMessage(
-            "Sei un analista finanziario. "
-            "Riceverai un oggetto JSON 'financial_summary' con la struttura:\n"
-            "ticker, period, trend_12m, key_metrics, narrative.\n"
-            "Rispondi in modo chiaro usando questi dati, senza inventare numeri aggiuntivi."
+            "You are a financial analyst. You will receive a JSON object named 'financial_summary' containing ticker, period, trend_12m, key_metrics, and narrative. Use only the provided data to answer the user's question. Do not invent or hallucinate additional numbers or information. Provide a clear, concise, and professional analysis based strictly on the summary."
         ),
         HumanMessage(
             content=(
-                "Ecco il riassunto strutturato del titolo:\n\n"
+                "Here is the structured summary of the stock:\n\n"
                 f"{json.dumps(json_summary, indent=2)}\n\n"
-                f"Domanda dell'utente: {user_question}"
+                f"User question: {user_question}"
             )
         )
     ]
