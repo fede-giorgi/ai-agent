@@ -9,51 +9,53 @@ from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 
-
 class PortfolioDecision(BaseModel):
     action: Literal["buy", "sell", "short", "cover", "hold"]
     quantity: int = Field(description="Number of shares to trade")
     confidence: int = Field(description="Confidence 0-100")
     reasoning: str = Field(description="Reasoning for the decision")
 
-
 class PortfolioManagerOutput(BaseModel):
     decisions: dict[str, PortfolioDecision] = Field(description="Dictionary of ticker to trading decisions")
 
-
-##### Portfolio Management Agent #####
 def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_manager"):
-    """Makes final trading decisions and generates orders for multiple tickers"""
+    """Makes final trading decisions by synthesizing analysts, risk limits, and MAP simulation."""
 
     portfolio = state["data"]["portfolio"]
     analyst_signals = state["data"]["analyst_signals"]
     tickers = state["data"]["tickers"]
+    
+    # --- MAP DATA EXTRACTION ---
+    prediction = state.get("prediction_output", {})
+    evaluation = state.get("evaluator_output", {})
+    eval_score = evaluation.get("score", 0.5)
 
     position_limits = {}
     current_prices = {}
     max_shares = {}
     signals_by_ticker = {}
-    for ticker in tickers:
-        progress.update_status(agent_id, ticker, "Processing analyst signals")
 
-        # Find the corresponding risk manager for this portfolio manager
+    for ticker in tickers:
+        progress.update_status(agent_id, ticker, f"Orchestrating (MAP Score: {eval_score})")
+
         if agent_id.startswith("portfolio_manager_"):
             suffix = agent_id.split('_')[-1]
             risk_manager_id = f"risk_management_agent_{suffix}"
         else:
-            risk_manager_id = "risk_management_agent"  # Fallback for CLI
+            risk_manager_id = "risk_management_agent"
 
         risk_data = analyst_signals.get(risk_manager_id, {}).get(ticker, {})
         position_limits[ticker] = risk_data.get("remaining_position_limit", 0.0)
         current_prices[ticker] = float(risk_data.get("current_price", 0.0))
 
-        # Calculate maximum shares allowed based on position limit and price
         if current_prices[ticker] > 0:
-            max_shares[ticker] = int(position_limits[ticker] // current_prices[ticker])
+            # MAP Adjustment: Scale the maximum allowed shares by the Evaluator Score
+            # If score is low, we naturally restrict the maximum position size
+            base_max = int(position_limits[ticker] // current_prices[ticker])
+            max_shares[ticker] = int(base_max * (eval_score / 1.0))
         else:
             max_shares[ticker] = 0
 
-        # Compress analyst signals to {sig, conf}
         ticker_signals = {}
         for agent, signals in analyst_signals.items():
             if not agent.startswith("risk_management_agent") and ticker in signals:
@@ -65,8 +67,7 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
 
     state["data"]["current_prices"] = current_prices
 
-    progress.update_status(agent_id, None, "Generating trading decisions")
-
+    # Generate decision including Predictor and Evaluator insights
     result = generate_trading_decision(
         tickers=tickers,
         signals_by_ticker=signals_by_ticker,
@@ -75,15 +76,20 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         portfolio=portfolio,
         agent_id=agent_id,
         state=state,
+        prediction=prediction,
+        evaluation=evaluation
     )
+
     message = HumanMessage(
         content=json.dumps({ticker: decision.model_dump() for ticker, decision in result.decisions.items()}),
         name=agent_id,
     )
 
     if state["metadata"]["show_reasoning"]:
-        show_agent_reasoning({ticker: decision.model_dump() for ticker, decision in result.decisions.items()},
-                             "Portfolio Manager")
+        show_agent_reasoning({
+            "MAP_Evaluation": evaluation,
+            "Decisions": {ticker: d.model_dump() for ticker, d in result.decisions.items()}
+        }, "Portfolio Manager (MAP)")
 
     progress.update_status(agent_id, None, "Done")
 
@@ -91,6 +97,69 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         "messages": state["messages"] + [message],
         "data": state["data"],
     }
+
+def generate_trading_decision(
+        tickers: list[str],
+        signals_by_ticker: dict[str, dict],
+        current_prices: dict[str, float],
+        max_shares: dict[str, int],
+        portfolio: dict[str, float],
+        agent_id: str,
+        state: AgentState,
+        prediction: dict,
+        evaluation: dict
+) -> PortfolioManagerOutput:
+    
+    allowed_actions_full = compute_allowed_actions(tickers, current_prices, max_shares, portfolio)
+    prefilled_decisions: dict[str, PortfolioDecision] = {}
+    tickers_for_llm: list[str] = []
+
+    for t in tickers:
+        aa = allowed_actions_full.get(t, {"hold": 0})
+        if set(aa.keys()) == {"hold"}:
+            prefilled_decisions[t] = PortfolioDecision(
+                action="hold", quantity=0, confidence=100.0, reasoning="No valid trade capacity."
+            )
+        else:
+            tickers_for_llm.append(t)
+
+    if not tickers_for_llm:
+        return PortfolioManagerOutput(decisions=prefilled_decisions)
+
+    template = ChatPromptTemplate.from_messages([
+        ("system", (
+            "You are the Portfolio Orchestrator. You must synthesize Analyst Signals with the Mental Simulation result.\n"
+            "MAP CONTEXT:\n"
+            "- Market Simulation: {prediction}\n"
+            "- Evaluator Utility Score: {eval_score}/1.0\n"
+            "- Evaluation Reasoning: {eval_reasoning}\n\n"
+            "RULES:\n"
+            "1. Use the Evaluator Score to scale your conviction.\n"
+            "2. If score < 0.6, be extremely conservative with quantities.\n"
+            "3. Ensure the chosen action is in the 'Allowed' list and quantity <= max."
+        )),
+        ("human", "Signals: {signals}\nAllowed: {allowed}")
+    ])
+
+    prompt = template.invoke({
+        "prediction": json.dumps(prediction),
+        "eval_score": evaluation.get("score", 0.5),
+        "eval_reasoning": evaluation.get("reasoning", "N/A"),
+        "signals": json.dumps(_compact_signals({t: signals_by_ticker.get(t, {}) for t in tickers_for_llm})),
+        "allowed": json.dumps({t: allowed_actions_full[t] for t in tickers_for_llm})
+    })
+
+    llm_out = call_llm(
+        prompt=prompt,
+        pydantic_model=PortfolioManagerOutput,
+        agent_name=agent_id,
+        state=state,
+        default_factory=lambda: PortfolioManagerOutput(decisions={t: PortfolioDecision(action="hold", quantity=0, confidence=0, reasoning="LLM Failure") for t in tickers_for_llm})
+    )
+
+    merged = dict(prefilled_decisions)
+    merged.update(llm_out.decisions)
+    return PortfolioManagerOutput(decisions=merged)
 
 
 def compute_allowed_actions(

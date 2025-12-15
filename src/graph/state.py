@@ -2,6 +2,9 @@ from typing_extensions import Annotated, Sequence, TypedDict
 
 import operator
 from langchain_core.messages import BaseMessage
+from typing import Annotated, TypedDict, List, Dict, Any
+from langgraph.graph.message import add_messages
+
 
 
 import json
@@ -11,11 +14,20 @@ def merge_dicts(a: dict[str, any], b: dict[str, any]) -> dict[str, any]:
     return {**a, **b}
 
 
-# Define agent state
+
 class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], operator.add]
-    data: Annotated[dict[str, any], merge_dicts]
-    metadata: Annotated[dict[str, any], merge_dicts]
+    # Conversation messages
+    messages: Annotated[List[Any], add_messages]
+    
+    # Structured market and agent data
+    data: Dict[str, Any]
+    
+    # MAP-specific outputs
+    metadata: Dict[str, Any]  # Stores model-related info
+    decomposer_output: Dict[str, Any]
+    analyst_signals: Dict[str, Any]
+    prediction_output: Dict[str, Any]
+    evaluator_output: Dict[str, Any]
 
 
 def show_agent_reasoning(output, agent_name):
