@@ -9,7 +9,7 @@ class PredictionOutput(BaseModel):
 
 def predictor_agent(state: AgentState):
     """
-    Mental Simulation (OFC): Projects the future state of the market 
+    Mental Simulation: Projects the future state of the market 
     by synthesizing all analyst signals.
     """
     
@@ -17,7 +17,7 @@ def predictor_agent(state: AgentState):
     tickers = state["data"]["tickers"]
     
     prompt = f"""
-    You are the Predictor (Orbitofrontal Cortex). Your role is Mental Simulation.
+    You are the Predictor. Your role is to perform a simulation.
     
     Current Tickers: {tickers}
     Analyst Signals: {analyst_signals}

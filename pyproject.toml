@@ -1,4 +1,4 @@
-[tool.poetry]
+poetry run python src/main.py --ticker AAPL,MSFT,NVDA[tool.poetry]
 name = "ai-hedge-fund"
 version = "1.0.0"
 description = "An AI-powered hedge fund that uses multiple agents to make trading decisions"

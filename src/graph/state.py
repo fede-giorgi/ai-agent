@@ -23,7 +23,7 @@ class AgentState(TypedDict):
     data: Dict[str, Any]
     
     # MAP-specific outputs
-    metadata: Dict[str, Any]  # Stores model-related info
+    metadata: Dict[str, Any]  
     decomposer_output: Dict[str, Any]
     analyst_signals: Dict[str, Any]
     prediction_output: Dict[str, Any]

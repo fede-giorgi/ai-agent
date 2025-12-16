@@ -9,18 +9,20 @@ class EvaluationOutput(BaseModel):
 
 def evaluator_agent(state: AgentState):
     prediction = state.get("prediction_output", {})
-    signals = state.get("analyst_signals", {})
+    
+    signals = state["data"].get("analyst_signals", {})
     
     prompt = f"""
-    You are the Risk Evaluator (OFC). 
-    The following market prediction has been generated: {prediction}
-    Based on these analyst signals: {signals}
+    You are the Risk Evaluator. 
+    Simulation to evaluate: {prediction}
+    Based on signals: {signals}
 
-    Your task:
-    1. Is the prediction consistent with the signals?
-    2. Is the risk/reward ratio acceptable (>0.7)?
-    3. If you detect a severe logical contradiction, respond with 'REPLAN'.
+    Task:
+    1. Verify logical consistency between simulation and signals.
+    2. Grade utility from 0 to 1.
+    3. If there's a major conflict, set recommendation to 'REPLAN'.
     """
     
     result = call_llm(prompt, EvaluationOutput, "evaluator", state)
-    return {"evaluator_output": result}
+    
+    return {"evaluator_output": result.model_dump()}
