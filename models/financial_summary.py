@@ -1,11 +1,6 @@
 from pydantic import BaseModel
 from typing import Literal, List
 
-class KeyMetric(BaseModel):
-    name: str
-    value: float | None
-    unit: str | None
-
 class FinancialSummary(BaseModel):
     ticker: str
     period: str
