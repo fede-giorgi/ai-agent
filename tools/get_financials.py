@@ -31,5 +31,14 @@ def get_financials(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    data = response.json()
-    return data.get('financials', {})
+    financials = response.json().get('financials')
+
+    # get income statements
+    income_statements = financials.get('income_statements')
+
+    # get balance sheets
+    balance_sheets = financials.get('balance_sheets')
+
+    # get cash flow statements
+    cash_flow_statements = financials.get('cash_flow_statements')
+    return financials, income_statements, balance_sheets, cash_flow_statements
