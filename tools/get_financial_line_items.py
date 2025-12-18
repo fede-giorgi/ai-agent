@@ -8,7 +8,6 @@ API_KEY = os.getenv("FINANCIAL_DATASETS_API_KEY")
 
 def get_financial_line_items(tickers, line_items, period="ttm", limit=30):
     """
-<<<<<<< HEAD
     Retrieves specific financial line items for a list of tickers, including:
     * `capital_expenditure`
     * `depreciation_and_amortization`
@@ -24,9 +23,6 @@ def get_financial_line_items(tickers, line_items, period="ttm", limit=30):
     * `free_cash_flow`
     * `current_assets`
     * `current_liabilities`
-=======
-    Retrieves specific financial line items for a list of tickers.
->>>>>>> origin/main
 
     Args:
         tickers (list): A list of stock tickers (e.g., ["AAPL", "NVDA"]).
