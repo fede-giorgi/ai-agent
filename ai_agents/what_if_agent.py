@@ -1,41 +1,76 @@
 import json
-from typing import Dict, List, Union
+from typing import Dict, List, Any, Union
+from llm import get_llm
 
 def run_what_if_agent(
-    current_portfolio: Dict[str, Union[int, float]],
+    current_portfolio: Dict[str, int],
+    available_capital: float,
     proposed_trades: List[Dict[str, Union[str, int, float]]],
-) -> str:
+    price_map: Dict[str, float],
+    warren_signals: Dict[str, Any] = None
+) -> dict:
     """
-    Simulates the impact of proposed trades on the current portfolio.
-
-    Args:
-        current_portfolio: A dictionary representing the current portfolio,
-                           e.g., {"AAPL": 10, "GOOGL": 5}.
-        proposed_trades: A list of dictionaries, where each dictionary
-                         represents a trade, e.g.,
-                         [{"action": "buy", "ticker": "MSFT", "shares": 2},
-                          {"action": "sell", "ticker": "AAPL", "shares": 3}].
-
-    Returns:
-        A JSON string representing the new portfolio after the trades.
+    Runs the What-If Agent to simulate the portfolio after applying trades.
     """
-    new_portfolio = current_portfolio.copy()
+    llm = get_llm()
+    
+    prompt = f"""
+    You are WhatIfAgent. Input: current_portfolio (ticker->shares), available_capital, proposed_trades, price_map, and (optional) warren_signals. Your job: simulate the portfolio after applying the proposed trades and report how it would look.
+    
+    Inputs:
+    - Current Portfolio: {json.dumps(current_portfolio)}
+    - Available Capital: {available_capital}
+    - Proposed Trades: {json.dumps(proposed_trades)}
+    - Price Map: {json.dumps(price_map)}
+    - Warren Signals: {json.dumps(warren_signals) if warren_signals else "None"}
 
-    for trade in proposed_trades:
-        action = trade.get("action")
-        ticker = trade.get("ticker")
-        shares = trade.get("shares")
+    Simulation rules:
+    - Apply all sells first, then buys.
+    - No shorting: selling more than held becomes a violation; cap at held and record a note (but do not go negative).
+    - Cash update:
+        cash_after = available_capital + sell_proceeds - buy_cost
+    - Portfolio shares update:
+        buy adds shares; sell subtracts shares; remove tickers with 0 shares.
+    - Compute value snapshots using price_map:
+        position_value = shares * price
+        total_value = cash_after + Σ(position_value)
+        weights = position_value / total_value (cash has its own weight)
 
-        if not all([action, ticker, shares]):
-            # Skip invalid trade entry
-            continue
-
-        if action == "buy":
-            new_portfolio[ticker] = new_portfolio.get(ticker, 0) + shares
-        elif action == "sell":
-            current_shares = new_portfolio.get(ticker, 0)
-            new_portfolio[ticker] = max(0, current_shares - shares)
-            if new_portfolio[ticker] == 0:
-                del new_portfolio[ticker]
-
-    return json.dumps(new_portfolio, indent=4)
+    Output JSON ONLY:
+    {{
+      "agent":"what_if",
+      "before":{{
+        "portfolio": {{...}},
+        "cash": number,
+        "total_value": number,
+        "weights":{{"TICKER": number, "CASH": number}}
+      }},
+      "after":{{
+        "portfolio": {{...}},
+        "cash": number,
+        "total_value": number,
+        "weights":{{"TICKER": number, "CASH": number}}
+      }},
+      "applied_trades":[{{"action":"...","ticker":"...","shares":...,"price":number,"value":number}}],
+      "notes":[...],
+      "violations":[...]
+    }}
+    """
+    
+    response = llm.invoke(prompt)
+    try:
+        content = response.content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {
+            "agent": "what_if",
+            "before": {},
+            "after": {},
+            "applied_trades": [],
+            "notes": ["Error parsing LLM response"],
+            "violations": [str(response.content)]
+        }

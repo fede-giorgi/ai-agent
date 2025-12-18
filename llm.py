@@ -1,7 +1,11 @@
 #%%
 import os
+import logging
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+# Silence the warning from langchain_google_genai
+logging.getLogger("langchain_google_genai").setLevel(logging.ERROR)
 
 load_dotenv()
 

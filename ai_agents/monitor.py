@@ -1,59 +1,69 @@
+import json
 from typing import Dict, List, Union, Tuple
 from models.financial_summary import FinancialSummary
-
-def get_price_from_summary(summary: FinancialSummary) -> float:
-    """
-    Estimates the price of a stock from the FinancialSummary.
-    Uses market_cap / outstanding_shares as a proxy.
-    Returns 0.0 if data is not available.
-    """
-    if summary.market_cap and summary.outstanding_shares and summary.outstanding_shares > 0:
-        return summary.market_cap / summary.outstanding_shares
-    return 0.0
+from llm import get_llm
 
 def run_monitor_agent(
     proposed_trades: List[Dict[str, Union[str, int, float]]],
+    current_portfolio: Dict[str, int],
     available_capital: float,
-    financial_data: Dict[str, FinancialSummary],
-) -> Tuple[bool, str]:
+    price_map: Dict[str, float],
+) -> dict:
     """
-    Checks if the proposed trades are within the available capital.
-
-    Args:
-        proposed_trades: A list of trades to be executed.
-        available_capital: The amount of cash available for trading.
-        financial_data: A dictionary of FinancialSummary objects, keyed by ticker.
-
-    Returns:
-        A tuple containing:
-        - bool: True if the trades are valid, False otherwise.
-        - str: A message explaining the result.
+    Runs the Monitor Agent to validate the proposed configuration.
     """
-    total_cost = 0.0
+    llm = get_llm()
 
-    for trade in proposed_trades:
-        action = trade.get("action")
-        ticker = trade.get("ticker")
-        shares = trade.get("shares")
+    prompt = f"""
+    You are MonitorAgent. Input: proposed_trades, current_portfolio, available_capital, price_map. Your job: validate that the proposed configuration is within bounds and is executable.
 
-        if not all([action, ticker, shares]):
-            continue
+    Inputs:
+    - Proposed Trades: {json.dumps(proposed_trades)}
+    - Current Portfolio: {json.dumps(current_portfolio)}
+    - Available Capital: {available_capital}
+    - Price Map: {json.dumps(price_map)}
 
-        if ticker not in financial_data:
-            return False, f"Invalid trade: No financial data for {ticker}."
+    Checks (must all pass):
+    - Schema: each trade has action in {{buy,sell}}, ticker string, shares integer > 0.
+    - Known ticker + price: ticker exists in price_map AND price > 0.
+    - Holdings: for sells, shares <= current_portfolio[ticker].
+    - Budget: compute expected_cash_change assuming sells first:
+        sell_proceeds = Σ(sell_shares * price)
+        buy_cost      = Σ(buy_shares  * price)
+        required_cash = buy_cost - sell_proceeds
+      Must satisfy required_cash <= available_capital.
+    - No NaN/Infinity; treat missing data as invalid.
 
-        price = get_price_from_summary(financial_data[ticker])
-        if price == 0.0:
-            return False, f"Invalid trade: Cannot determine price for {ticker}."
-        
-        trade_value = price * shares
+    If invalid: do NOT “fix” trades unless requested; just report violations clearly.
 
-        if action == "buy":
-            total_cost += trade_value
-        elif action == "sell":
-            total_cost -= trade_value
-
-    if total_cost > available_capital:
-        return False, f"Trade is too expensive. Cost: ${total_cost:,.2f}, Capital: ${available_capital:,.2f}"
-
-    return True, "Trades are within budget."
+    Output JSON ONLY:
+    {{
+      "agent":"monitor",
+      "is_valid": true|false,
+      "summary":{{
+        "buy_cost": number,
+        "sell_proceeds": number,
+        "required_cash": number,
+        "available_capital": number
+      }},
+      "violations":[{{"type":"...","ticker":"...","detail":"..."}}],
+      "notes":[...]
+    }}
+    """
+    
+    response = llm.invoke(prompt)
+    try:
+        content = response.content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return {
+            "agent": "monitor",
+            "is_valid": False,
+            "summary": {},
+            "violations": [{"type": "ParseError", "ticker": "ALL", "detail": "Failed to parse LLM response"}],
+            "notes": [str(response.content)]
+        }

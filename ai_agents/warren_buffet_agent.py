@@ -7,6 +7,7 @@ from typing_extensions import Literal
 from models.financial_summary import FinancialSummary
 from llm import get_llm
 import math
+import json
 
 # --- Pydantic Models ---
 
@@ -18,35 +19,27 @@ class WarrenBuffettSignal(BaseModel):
 
 # --- Helper Functions ---
 
-def _calculate_book_value_cagr(book_values: list) -> tuple[int, str]:
-    """A private helper function to calculate the compound annual growth rate of book value."""
-    if len(book_values) < 2:
-        return 0, "Insufficient data for CAGR calculation"
-
-    oldest_bv, latest_bv = book_values[-1], book_values[0]
-    years = len(book_values) - 1
-
-    if oldest_bv > 0 and latest_bv > 0:
-        cagr = ((latest_bv / oldest_bv) ** (1 / years)) - 1
-        if cagr > 0.15:
-            return 2, f"Excellent book value CAGR: {cagr:.1%}"
-        elif cagr > 0.1:
-            return 1, f"Good book value CAGR: {cagr:.1%}"
-        else:
-            return 0, f"Book value CAGR: {cagr:.1%}"
-    elif oldest_bv < 0 < latest_bv:
-        return 3, "Excellent: Company improved from negative to positive book value"
-    elif oldest_bv > 0 > latest_bv:
-        return 0, "Warning: Company declined from positive to negative book value"
-    else:
-        return 0, "Unable to calculate meaningful book value CAGR due to negative values"
-
 def estimate_maintenance_capex(summary: FinancialSummary) -> float:
     """Estimates the capital expenditures required to maintain current operations."""
-    # This is a simplified estimation. A more robust implementation would be needed for a real-world scenario.
+    # Simplified estimation using TTM data as we rely on the summary
     if summary.depreciation_and_amortization:
         return summary.depreciation_and_amortization
     return 0.0
+
+def calculate_owner_earnings(summary: FinancialSummary) -> dict:
+    """
+    Calculates "owner earnings," Buffett's preferred measure of profitability.
+    """
+    if not all([summary.net_income, summary.depreciation_and_amortization, summary.capital_expenditure]):
+        return {"owner_earnings": None, "details": "Missing data for owner earnings calculation."}
+
+    maintenance_capex = estimate_maintenance_capex(summary)
+    # Owner Earnings = Net Income + Depreciation - Maintenance Capex
+    # Note: capital_expenditure is usually negative in data, but maintenance_capex is a cost (positive magnitude).
+    owner_earnings = summary.net_income + summary.depreciation_and_amortization - maintenance_capex
+    
+    return {"owner_earnings": owner_earnings, "details": f"Owner earnings estimated at ${owner_earnings:,.0f}."}
+
 
 # --- Analysis Tools ---
 
@@ -119,17 +112,6 @@ def analyze_management_quality(summary: FinancialSummary) -> dict:
     return {"score": mgmt_score, "details": "; ".join(reasoning)}
 
 @tool
-def calculate_owner_earnings(summary: FinancialSummary) -> dict:
-    """Calculates 'owner earnings', Buffett's preferred measure of profitability."""
-    if not all([summary.net_income, summary.depreciation_and_amortization, summary.capital_expenditure]):
-        return {"owner_earnings": None, "details": "Missing data for owner earnings calculation."}
-
-    maintenance_capex = estimate_maintenance_capex(summary)
-    owner_earnings = summary.net_income + summary.depreciation_and_amortization - maintenance_capex
-    
-    return {"owner_earnings": owner_earnings, "details": f"Owner earnings estimated at ${owner_earnings:,.0f}."}
-
-@tool
 def calculate_intrinsic_value(summary: FinancialSummary) -> dict:
     """Estimates the company's intrinsic value using a DCF model."""
     owner_earnings_data = calculate_owner_earnings(summary)
@@ -183,7 +165,6 @@ def analyze_pricing_power(summary: FinancialSummary) -> dict:
     
     return {"score": score, "details": "; ".join(reasoning)}
 
-
 # --- Main Agent ---
 
 def warren_buffett_agent(summary: FinancialSummary) -> dict:
@@ -193,53 +174,39 @@ def warren_buffett_agent(summary: FinancialSummary) -> dict:
     print(f"Analyzing {summary.ticker} with Warren Buffett agent...")
     
     llm = get_llm()
-    tools = [
-        analyze_fundamentals,
-        analyze_consistency,
-        analyze_moat,
-        analyze_management_quality,
-        calculate_owner_earnings,
-        calculate_intrinsic_value,
-        analyze_book_value_growth,
-        analyze_pricing_power,
-    ]
-    llm_with_tools = llm.bind_tools(tools)
     
+    # The tools now use the provided summary object directly, avoiding redundant API calls.
+    
+    analysis_results = {
+        "fundamentals": analyze_fundamentals.func(summary=summary),
+        "consistency": analyze_consistency.func(summary=summary),
+        "moat": analyze_moat.func(summary=summary),
+        "management": analyze_management_quality.func(summary=summary),
+        "book_value_growth": analyze_book_value_growth.func(summary=summary),
+        "intrinsic_value": calculate_intrinsic_value.func(summary=summary),
+        "pricing_power": analyze_pricing_power.func(summary=summary),
+    }
+
+    # The user wants an LLM to generate the final output, so I will format the analysis results
+    # and pass them to an LLM with a structured output model.
+
     structured_llm = llm.with_structured_output(WarrenBuffettSignal)
 
     prompt = f"""
-    You are a virtual Warren Buffett. Analyze the provided financial summary for the ticker {summary.ticker}.
-    Your goal is to determine if the stock is a good investment based on your value investing principles.
-    
-    Use the provided tools to conduct your analysis. You must use at least three tools.
-    
-    Financial Summary:
-    {summary.model_dump_json(indent=2)}
-    
-    After your analysis, provide a final investment signal (bullish, bearish, or neutral), a confidence score (0-100), and a brief reasoning.
-    """
+    You are a virtual Warren Buffett. Based on the following analysis, provide a final investment signal.
 
-    # This is a simplified invocation. In a real scenario, you might have a more complex conversational chain.
-    # For this refactoring, we'll directly call the structured LLM with the analysis prompt.
-    
-    # We are not invoking the tools here for real, as we don't have an execution environment for them.
-    # We will generate a mock analysis based on the summary.
-    
-    mock_analysis_prompt = f"""
-    Based on the following financial summary, generate a Warren Buffett style investment signal.
-    
-    Financial Summary:
-    {summary.model_dump_json(indent=2)}
-    
-    - Is the Return on Equity (ROE) consistently high (e.g., > 15%)?
-    - Is the debt-to-equity ratio low (e.g., < 0.5)?
-    - Does the company have a strong competitive advantage (moat), indicated by high and stable margins?
-    - Is management shareholder-friendly (e.g., buybacks, dividends)?
+    Analysis for {summary.ticker}:
+    {json.dumps(analysis_results, indent=2)}
+
+    - Is the business understandable and within a circle of competence? (Assume yes for this analysis).
+    - Does it have a durable competitive advantage (moat)?
+    - Is the management rational and shareholder-friendly?
+    - Is the company financially strong?
     - Is the stock trading at a significant discount to its intrinsic value?
-    
-    Based on these questions, provide a bullish, bearish, or neutral signal, a confidence score, and a brief reasoning.
+
+    Based on the analysis, provide a bullish, bearish, or neutral signal, a confidence score (0-100), and a brief reasoning.
     """
     
-    final_signal = structured_llm.invoke(mock_analysis_prompt)
+    final_signal = structured_llm.invoke(prompt)
     
     return {summary.ticker: final_signal.model_dump()}
