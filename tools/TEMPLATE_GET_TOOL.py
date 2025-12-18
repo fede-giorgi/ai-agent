@@ -75,3 +75,4 @@ def get_metrics(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
     data = response.json()
     return data.get('snapshot')
 
+

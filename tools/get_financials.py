@@ -33,12 +33,4 @@ def get_financials(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
     # parse data from the response
     financials = response.json().get('financials')
 
-    # get income statements
-    income_statements = financials.get('income_statements')
-
-    # get balance sheets
-    balance_sheets = financials.get('balance_sheets')
-
-    # get cash flow statements
-    cash_flow_statements = financials.get('cash_flow_statements')
-    return financials, income_statements, balance_sheets, cash_flow_statements
+    return financials

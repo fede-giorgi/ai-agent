@@ -3,3 +3,4 @@ python-dotenv
 langchain
 pydantic
 langchain-google-genai
+rich
