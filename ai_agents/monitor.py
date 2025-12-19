@@ -1,6 +1,7 @@
 import json
 from typing import Dict, List, Union, Tuple
 from models.financial_summary import FinancialSummary
+from langchain_core.messages import SystemMessage, HumanMessage
 from llm import get_llm
 
 def run_monitor_agent(
@@ -14,44 +15,46 @@ def run_monitor_agent(
     """
     llm = get_llm()
 
-    prompt = f"""
-    You are MonitorAgent. Input: proposed_trades, current_portfolio, available_capital, price_map. Your job: validate that the proposed configuration is within bounds and is executable.
-
-    Inputs:
-    - Proposed Trades: {json.dumps(proposed_trades)}
-    - Current Portfolio: {json.dumps(current_portfolio)}
-    - Available Capital: {available_capital}
-    - Price Map: {json.dumps(price_map)}
+    system_instruction = SystemMessage("""You are MonitorAgent. Your job is to validate that the proposed stock trading configuration is within bounds and executable.
 
     Checks (must all pass):
-    - Schema: each trade has action in {{buy,sell}}, ticker string, shares integer > 0.
+    - Schema: each trade has action in {buy,sell}, ticker string, shares integer > 0.
     - Known ticker + price: ticker exists in price_map AND price > 0.
     - Holdings: for sells, shares <= current_portfolio[ticker].
     - Budget: compute expected_cash_change assuming sells first:
         sell_proceeds = Σ(sell_shares * price)
         buy_cost      = Σ(buy_shares  * price)
         required_cash = buy_cost - sell_proceeds
-      Must satisfy required_cash <= available_capital.
+        Must satisfy required_cash <= available_capital.
     - No NaN/Infinity; treat missing data as invalid.
 
     If invalid: do NOT “fix” trades unless requested; just report violations clearly.
 
-    Output JSON ONLY:
-    {{
-      "agent":"monitor",
-      "is_valid": true|false,
-      "summary":{{
+    Output JSON ONLY in this format:
+    {
+    "agent":"monitor",
+    "is_valid": true|false,
+    "summary":{
         "buy_cost": number,
         "sell_proceeds": number,
         "required_cash": number,
         "available_capital": number
-      }},
-      "violations":[{{"type":"...","ticker":"...","detail":"..."}}],
-      "notes":[...]
-    }}
-    """
+    },
+    "violations":[{"type":"...","ticker":"...","detail":"..."}],
+    "notes":[...]
+    }
+    """)
+
+    user_content = HumanMessage(f"""Please validate the following input configuration:
+
+    Inputs:
+    - Proposed Trades: {json.dumps(proposed_trades)}
+    - Current Portfolio: {json.dumps(current_portfolio)}
+    - Available Capital: {available_capital}
+    - Price Map: {json.dumps(price_map)}
+    """)
     
-    response = llm.invoke(prompt)
+    response = llm.invoke([system_instruction, user_content])
     try:
         content = response.content.strip()
         if content.startswith("```json"):
