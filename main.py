@@ -174,12 +174,6 @@ def main():
         risk_profile = get_risk_profile()
         backtesting_date = get_backtesting_date()
 
-    console.print("\n--- Your Configuration ---", style="bold green")
-    console.print(f"Portfolio: {portfolio}")
-    console.print(f"Capital: ${capital:,.2f}")
-    console.print(f"Risk Profile Level: {risk_profile}")
-    console.print(f"Backtesting Date: {backtesting_date if backtesting_date else 'Today'}")
-
     console.print("\n--- Starting Financial Analysis ---", style="bold green")
     
     if debug_mode:
@@ -215,7 +209,14 @@ def main():
         for ticker, data in financial_data.items()
     }
     
-    console.print(f"Prices fetched: {price_map}")
+    # Display Configuration with Prices
+    console.print("\n--- Your Configuration ---", style="bold green")
+    console.print(f"Portfolio: {portfolio}")
+    console.print(f"Capital: ${capital:,.2f}")
+    console.print(f"Risk Profile Level: {risk_profile}")
+    console.print(f"Backtesting Date: {backtesting_date if backtesting_date else 'Today'}")
+    console.print(f"Fetched Prices: {price_map}")
+
 
     # --- Simulation Loop (Iterative Refinement) ---
     # We do NOT update the actual portfolio/capital here. We let the agents debate.
@@ -283,6 +284,10 @@ def main():
     
     # Display ASCII Chart
     console.print(generate_ascii_chart(history))
+
+    # Display History for User before Final Decision
+    console.print("\n[bold]Full Iteration History (Input to Final Orchestrator):[/bold]")
+    console.print_json(data=history)
 
     console.print("\n[bold cyan]--- Final Orchestrator Agent ---[/bold cyan]")
     final_output = run_final_orchestrator_agent(
