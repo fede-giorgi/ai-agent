@@ -7,7 +7,8 @@ def run_portfolio_manager_agent(
     available_capital: float,
     risk_profile: int,
     warren_signals: Dict[str, Any],
-    price_map: Dict[str, float]
+    price_map: Dict[str, float],
+    previous_feedback: Dict[str, Any] = None
 ) -> dict:
     """
     Runs the Portfolio Manager Agent to propose trades based on signals and risk profile.
@@ -15,7 +16,7 @@ def run_portfolio_manager_agent(
     llm = get_llm()
     
     prompt = f"""
-    You are PortfolioManagerAgent. Your goal is to optimize a stock portfolio based on Warren Buffett-style analysis signals, risk profile, and capital constraints. You must make smart, calculated decisions to maximize long-term value while managing risk.
+    You are PortfolioManagerAgent. Your goal is to optimize a stock portfolio based on Warren Buffett-style analysis signals, risk profile, and capital constraints. You must make smart, calculated decisions to maximize long-term value while managing risk. You are part of an iterative refinement process.
 
     Inputs:
     - Current Portfolio: {json.dumps(current_portfolio)}
@@ -23,6 +24,7 @@ def run_portfolio_manager_agent(
     - Risk Profile: {risk_profile}
     - Warren Signals: {json.dumps(warren_signals)}
     - Price Map: {json.dumps(price_map)}
+    - Feedback from Previous Iteration: {json.dumps(previous_feedback) if previous_feedback else "None (First Iteration)"}
 
     Strategy & Logic:
     1. **Signal Interpretation**:
@@ -31,7 +33,7 @@ def run_portfolio_manager_agent(
        - **Neutral**: Hold or trim. Do not add to neutral positions unless they are significantly underweight and fundamentals are still decent.
 
     2. **Risk Management (Risk Profile {risk_profile}/10)**:
-       - **Low Risk (1-3)**: Prioritize capital preservation. Keep a healthy cash buffer (20-40%). Diversify broadly. Sell bearish stocks aggressively.
+       - **Low Risk (1-3)**: EXTREME CAUTION. Prioritize capital preservation above all. If Risk Profile is 1, DO NOT BUY any stocks; only sell to raise cash if needed. Keep a large cash buffer.
        - **Mid Risk (4-7)**: Balanced approach. Cash buffer 5-15%. Scale position sizes based on conviction (Confidence score).
        - **High Risk (8-10)**: Aggressive growth. Low cash buffer (<5%). Concentrate capital in top highest-confidence Bullish ideas.
 
@@ -45,6 +47,9 @@ def run_portfolio_manager_agent(
        - **Sell First**: Generate cash from Bearish/Neutral sells before buying.
        - **Buy Second**: Allocate available cash to Bullish stocks with highest conviction.
        - **Rebalance**: If a position exceeds its target weight significantly, trim it.
+
+    Refinement Logic:
+    - If the "What-If" agent suggested a better alternative in the feedback, consider adopting it.
 
     Hard Constraints:
     - Trades must be JSON objects: {{"action":"buy|sell","ticker":"XXX","shares":int>0}}

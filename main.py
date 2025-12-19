@@ -8,8 +8,9 @@ from datetime import datetime, timedelta
 
 from ai_agents.research_agent import run_research_agent
 from ai_agents.warren_buffet_agent import warren_buffett_agent
-from ai_agents.portfolio_manager import run_portfolio_manager_agent
+from ai_agents.portfolio_and_risk_manager import run_portfolio_manager_agent
 from ai_agents.what_if_agent import run_what_if_agent
+from ai_agents.final_orchestrator_agent import run_final_orchestrator_agent
 from ai_agents.monitor import run_monitor_agent
 from ai_agents.tickers import TICKERS
 from models.financial_summary import FinancialSummary
@@ -188,8 +189,14 @@ def main():
     
     console.print(f"Prices fetched: {price_map}")
 
-    # Main loop for 10 iterations
+    # --- Simulation Loop (Iterative Refinement) ---
+    # We do NOT update the actual portfolio/capital here. We let the agents debate.
     history = []
+    
+    # Keep track of the initial state to pass to agents
+    initial_portfolio = portfolio.copy()
+    initial_capital = capital
+
     for i in range(1, 11):
         console.rule(f"[bold yellow]Iteration {i}/10[/bold yellow]")
 
@@ -202,68 +209,76 @@ def main():
             signals_text.append(f"- {ticker}: {s} (Confidence: {c}%)\n", style=color)
         
         console.print(Panel(signals_text, title="Warren Buffett Signals", expand=False))
-        console.print(f"[bold]Current Portfolio:[/bold] {portfolio}")
-        console.print(f"[bold]Available Capital:[/bold] ${capital:,.2f}")
+        console.print(f"[bold]Simulated Portfolio:[/bold] {initial_portfolio}")
+        console.print(f"[bold]Simulated Capital:[/bold] ${initial_capital:,.2f}")
+
+        # Get feedback from previous iteration
+        previous_feedback = history[-1] if history else None
 
         # 3. Portfolio Manager Agent
         console.print("\n[bold cyan]--- Portfolio Manager Agent ---[/bold cyan]")
         pm_output = run_portfolio_manager_agent(
-            portfolio, capital, risk_profile, warren_buffett_signals, price_map
+            initial_portfolio, initial_capital, risk_profile, warren_buffett_signals, price_map, previous_feedback
         )
         console.print_json(data=pm_output)
         
         proposed_trades = pm_output.get("proposed_trades", [])
 
-        if not proposed_trades:
-            console.print("[yellow]No trades proposed. Ending iteration.[/yellow]")
-            history.append({"iteration": i, "status": "No Trades", "portfolio": portfolio.copy(), "capital": capital})
-            continue
-
         # 4. Monitor Agent (Check constraints)
         console.print("\n[bold cyan]--- Monitor Agent ---[/bold cyan]")
-        monitor_output = run_monitor_agent(proposed_trades, portfolio, capital, price_map)
+        monitor_output = run_monitor_agent(proposed_trades, initial_portfolio, initial_capital, price_map)
         console.print_json(data=monitor_output)
         
         is_valid = monitor_output.get("is_valid", False)
         
-        if not is_valid:
-            console.print("[bold red]Invalid trades. Skipping portfolio update.[/bold red]")
-            history.append({"iteration": i, "status": "Invalid", "portfolio": portfolio.copy(), "capital": capital})
-            continue
-
-        # 5. What If Agent (Simulate)
+        # 5. What If Agent (Challenger)
         console.print("\n[bold cyan]--- What If Agent ---[/bold cyan]")
-        what_if_output = run_what_if_agent(portfolio, capital, proposed_trades, price_map, warren_buffett_signals)
+        what_if_output = run_what_if_agent(initial_portfolio, initial_capital, proposed_trades, price_map, warren_buffett_signals)
         console.print_json(data=what_if_output)
         
-        # Update portfolio and capital based on simulation
-        # In a real agent loop, the Portfolio Manager might refine based on What-If feedback.
-        # Here we accept the valid trades and update the state for the next iteration.
-        if "after" in what_if_output:
-            portfolio = what_if_output["after"].get("portfolio", portfolio)
-            capital = what_if_output["after"].get("cash", capital)
-            console.print("[green]Portfolio and Capital updated based on simulation.[/green]")
-            history.append({"iteration": i, "status": "Executed", "portfolio": portfolio.copy(), "capital": capital})
+        # Store iteration data
+        iteration_data = {
+            "iteration": i,
+            "pm_proposal": pm_output,
+            "monitor_check": monitor_output,
+            "what_if_critique": what_if_output
+        }
+        history.append(iteration_data)
 
-    # Final Summary
-    console.rule("[bold green]Final Summary[/bold green]")
+    # --- Final Orchestrator ---
+    console.rule("[bold green]Final Decision[/bold green]")
     console.print(Panel(signals_text, title="Warren Buffett Signals", expand=False))
     
-    summary_table = Table(title="Iteration History")
-    summary_table.add_column("Iter", justify="center")
-    summary_table.add_column("Status", justify="center")
-    summary_table.add_column("Resulting Portfolio", justify="left")
-    summary_table.add_column("Capital", justify="right")
+    console.print("\n[bold cyan]--- Final Orchestrator Agent ---[/bold cyan]")
+    final_output = run_final_orchestrator_agent(
+        initial_portfolio, initial_capital, warren_buffett_signals, price_map, history
+    )
+    console.print_json(data=final_output)
     
-    for item in history:
-        summary_table.add_row(
-            str(item["iteration"]),
-            f"[green]{item['status']}[/green]" if item["status"] == "Executed" else f"[red]{item['status']}[/red]",
-            str(item["portfolio"]),
-            f"${item['capital']:,.2f}"
-        )
+    final_trades = final_output.get("final_trades", [])
     
-    console.print(summary_table)
+    # Execute Final Trades (Update local state)
+    if final_trades:
+        console.print("\n[bold green]Executing Final Trades...[/bold green]")
+        for trade in final_trades:
+            ticker = trade['ticker']
+            shares = trade['shares']
+            action = trade['action']
+            price = price_map.get(ticker, 0)
+            
+            if action == 'buy':
+                portfolio[ticker] = portfolio.get(ticker, 0) + shares
+                capital -= shares * price
+            elif action == 'sell':
+                portfolio[ticker] = max(0, portfolio.get(ticker, 0) - shares)
+                capital += shares * price
+                if portfolio[ticker] == 0:
+                    del portfolio[ticker]
+        
+        console.print(f"[bold]Final Portfolio:[/bold] {portfolio}")
+        console.print(f"[bold]Final Capital:[/bold] ${capital:,.2f}")
+    else:
+        console.print("[yellow]No trades executed based on final decision.[/yellow]")
 
 if __name__ == "__main__":
     try:

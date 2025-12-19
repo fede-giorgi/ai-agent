@@ -15,7 +15,7 @@ def run_what_if_agent(
     llm = get_llm()
     
     prompt = f"""
-    You are WhatIfAgent. Input: current_portfolio (ticker->shares), available_capital, proposed_trades, price_map, and (optional) warren_signals. Your job: simulate the portfolio after applying the proposed trades and report how it would look.
+    You are WhatIfAgent. Your goal is to CHALLENGE the proposed trades from the Portfolio Manager. You act as a "Devil's Advocate" or Scenario Planner.
     
     Inputs:
     - Current Portfolio: {json.dumps(current_portfolio)}
@@ -24,36 +24,23 @@ def run_what_if_agent(
     - Price Map: {json.dumps(price_map)}
     - Warren Signals: {json.dumps(warren_signals) if warren_signals else "None"}
 
-    Simulation rules:
-    - Apply all sells first, then buys.
-    - No shorting: selling more than held becomes a violation; cap at held and record a note (but do not go negative).
-    - Cash update:
-        cash_after = available_capital + sell_proceeds - buy_cost
-    - Portfolio shares update:
-        buy adds shares; sell subtracts shares; remove tickers with 0 shares.
-    - Compute value snapshots using price_map:
-        position_value = shares * price
-        total_value = cash_after + Σ(position_value)
-        weights = position_value / total_value (cash has its own weight)
+    Your Task:
+    1. Analyze the proposed trades.
+    2. Generate a "What-If" scenario that challenges the proposal. Examples:
+       - "What if we bought 50% less of X to keep more cash?"
+       - "What if we sold Y instead of Z?"
+       - "What if we did nothing?"
+    3. Provide a concrete alternative trade suggestion if you think it's better.
 
     Output JSON ONLY:
     {{
-      "agent":"what_if",
-      "before":{{
-        "portfolio": {{...}},
-        "cash": number,
-        "total_value": number,
-        "weights":{{"TICKER": number, "CASH": number}}
+      "agent": "what_if",
+      "critique": "Brief critique of the proposed trades",
+      "alternative_scenario": {{
+         "description": "Description of the alternative",
+         "proposed_trades": [{{"action":"...","ticker":"...","shares":...}}]
       }},
-      "after":{{
-        "portfolio": {{...}},
-        "cash": number,
-        "total_value": number,
-        "weights":{{"TICKER": number, "CASH": number}}
-      }},
-      "applied_trades":[{{"action":"...","ticker":"...","shares":...,"price":number,"value":number}}],
-      "notes":[...],
-      "violations":[...]
+      "reasoning": "Why this alternative might be safer or better"
     }}
     """
     
@@ -68,9 +55,7 @@ def run_what_if_agent(
     except json.JSONDecodeError:
         return {
             "agent": "what_if",
-            "before": {},
-            "after": {},
-            "applied_trades": [],
-            "notes": ["Error parsing LLM response"],
-            "violations": [str(response.content)]
+            "critique": "Error parsing response",
+            "alternative_scenario": {},
+            "reasoning": str(response.content)
         }
