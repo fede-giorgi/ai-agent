@@ -100,7 +100,10 @@ prompt_template = ChatPromptTemplate.from_messages(
             )
 
 
-def run_research_agent(tickers: List[str]) -> str:
+def run_research_agent(
+        tickers: List[str],
+        backtesting_date: str = None
+        ) -> str:
     """
     Runs the research agent to gather and structure financial data for a list of tickers.
     """
@@ -122,7 +125,11 @@ def run_research_agent(tickers: List[str]) -> str:
         tool_status = {"get_financials": "ok", "get_metrics": "ok", "get_financial_line_items": "ok", "get_stock_prices": "ok"}
 
         try:
-            financials_data = get_financials.func(ticker=ticker, period="ttm")
+            financials_data = get_financials.func(
+                ticker=ticker, period="annual", 
+                limit=10, 
+                end_date=backtesting_date
+                )
             financials_data_str = json.dumps(financials_data)
         except Exception as e:
             financials_data_str = f"Error: {e}"
@@ -130,7 +137,11 @@ def run_research_agent(tickers: List[str]) -> str:
             tool_status["get_financials"] = "error"
 
         try:
-            metrics_data = get_metrics.func(ticker=ticker)
+            metrics_data = get_metrics.func(
+                ticker=ticker, 
+                period="annual", 
+                limit=10, 
+                end_date=backtesting_date)
             metrics_data_str = json.dumps(metrics_data)
         except Exception as e:
             metrics_data_str = f"Error: {e}"
@@ -139,7 +150,11 @@ def run_research_agent(tickers: List[str]) -> str:
         
         try:
             line_items_data = get_financial_line_items.func(
-                tickers=[ticker], line_items=REQUIRED_LIST, period="ttm"
+                tickers=[ticker], 
+                line_items=REQUIRED_LIST, 
+                period="annual", 
+                limit=10, 
+                end_date=backtesting_date
             )
             line_items_data_str = json.dumps(line_items_data)
         except Exception as e:
@@ -148,7 +163,10 @@ def run_research_agent(tickers: List[str]) -> str:
             tool_status["get_financial_line_items"] = "error"
 
         try:
-            prices_data = get_stock_prices.func(ticker=ticker)
+            prices_data = get_stock_prices.func(
+                ticker=ticker,
+                end_date=backtesting_date
+                )
             prices_data_str = json.dumps(prices_data)
         except Exception as e:
             prices_data_str = f"Error: {e}"
