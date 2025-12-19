@@ -320,7 +320,6 @@ def main():
     else:
         console.print("[yellow]No trades executed based on final decision.[/yellow]")
 
-    # --- BACKTESTING EVALUATION ---
     if backtesting_date and portfolio:
         console.rule("[bold blue]Backtesting Evaluation[/bold blue]")
         console.print(f"Comparing Portfolio performance: {backtesting_date} vs TODAY", style="cyan")
@@ -328,7 +327,6 @@ def main():
         total_start_value = 0
         total_current_value = 0
         
-        # Tabella per mostrare i risultati
         perf_table = Table(title="Performance Analysis")
         perf_table.add_column("Ticker")
         perf_table.add_column("Shares")
@@ -337,58 +335,70 @@ def main():
         perf_table.add_column("P&L", style="bold")
 
         for ticker, shares in portfolio.items():
-            # 1. Recuperiamo il prezzo "STORICO" (quello usato dall'AI)
-            # Lo abbiamo già in price_map, che è stato popolato dal research agent con i dati storici
+            # start price from price_map (fetched by research agent)
             price_start = price_map.get(ticker, 0)
 
-            # 2. Recuperiamo il prezzo "ODIERNO" (Reale)
-            # Chiamiamo get_stock_prices SENZA end_date per avere i dati ad oggi
+            # current price via get_stock_prices tool
+            price_now = 0
             try:
-                # Recuperiamo gli ultimi prezzi (default ultimi 7 giorni fino a oggi)
-                current_data = get_stock_prices(ticker=ticker)
-                # Estraiamo l'ultimo prezzo di chiusura disponibile
-                prices_list = current_data.get('prices', [])
-                if prices_list:
-                    # L'ultimo della lista è il più recente
-                    price_now = prices_list[-1].get('close', 0)
+                # get current price, no date filter implied today
+                current_data = get_stock_prices.func(ticker=ticker)
+                
+                # Check for API errors
+                if "error" in current_data:
+                    console.print(f"[red]API Error for {ticker}: {current_data['error']}[/red]")
                 else:
-                    price_now = 0
-            except Exception:
+                    # Extract the list of prices
+                    prices_list = current_data.get('prices', [])
+                    
+                    if prices_list and isinstance(prices_list, list):
+                        # Take the last element (most recent)
+                        last_candle = prices_list[-1]
+                        price_now = last_candle.get('close', 0)
+                    else:
+                        console.print(f"[yellow]No price list found for {ticker}[/yellow]")
+            
+            except Exception as e:
+                console.print(f"[red]Error fetching current price for {ticker}: {e}[/red]")
                 price_now = 0
 
-            # Calcoli
+            # Financial Calculations
             val_start = shares * price_start
             val_now = shares * price_now
             
             total_start_value += val_start
             total_current_value += val_now
-
-            pnl_pct = ((price_now - price_start) / price_start * 100) if price_start > 0 else 0
+            
+            # Calculate P&L %
+            if price_start > 0:
+                pnl_pct = ((price_now - price_start) / price_start * 100)
+            else:
+                pnl_pct = 0
+            
+            # Color Formatting
             color = "green" if pnl_pct >= 0 else "red"
             
             perf_table.add_row(
                 ticker, 
                 str(shares), 
-                f"${price_start:.2f}", 
-                f"${price_now:.2f}", 
+                f"${price_start:,.2f}", 
+                f"${price_now:,.2f}", 
                 f"[{color}]{pnl_pct:+.2f}%[/{color}]"
             )
 
         console.print(perf_table)
-
-        # Calcolo Totale (includiamo il Cash residuo che non cambia valore nominale)
-        # Nota: 'capital' è il cash rimasto dopo gli acquisti
-        final_portfolio_value_historical = total_start_value + capital
-        final_portfolio_value_today = total_current_value + capital
+    
+        initial_portfolio_value = total_start_value + capital
+        current_portfolio_value = total_current_value + capital
         
-        total_return = ((final_portfolio_value_today - final_portfolio_value_historical) / final_portfolio_value_historical * 100) if final_portfolio_value_historical > 0 else 0
+        total_return_pct = ((current_portfolio_value - initial_portfolio_value) / initial_portfolio_value * 100) if initial_portfolio_value > 0 else 0
 
         console.print(Panel(
-            f"Portfolio Value on {backtesting_date}: ${final_portfolio_value_historical:,.2f}\n"
-            f"Portfolio Value Today:              ${final_portfolio_value_today:,.2f}\n"
-            f"Total Return:                       [bold]{total_return:+.2f}%[/bold]",
-            title="Backtest Result",
-            style="green" if total_return > 0 else "red"
+            f"Initial Value ({backtesting_date}): ${initial_portfolio_value:,.2f}\n"
+            f"Current Value (Today):           ${current_portfolio_value:,.2f}\n"
+            f"Total Return:                    [bold]{total_return_pct:+.2f}%[/bold]",
+            title="Backtest Summary",
+            style="green" if total_return_pct > 0 else "red"
         ))
         
     # End Timer
