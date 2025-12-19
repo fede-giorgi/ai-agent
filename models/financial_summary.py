@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List, Literal, Optional
 
 class FinancialSummary(BaseModel):
     ticker: str
@@ -61,3 +61,37 @@ class FinancialSummary(BaseModel):
     free_cash_flow: Optional[float] = None
     current_assets: Optional[float] = None
     current_liabilities: Optional[float] = None
+
+class ToolStatus(BaseModel):
+    get_financials: Literal["ok", "error"]
+    get_metrics: Literal["ok", "error"]
+    get_financial_line_items: Literal["ok", "error"]
+    get_stock_prices: Literal["ok", "error"]
+
+class Error(BaseModel):
+    tool: str
+    message: str
+    ticker: str
+
+class Result(BaseModel):
+    ticker: str
+    financial_summary: FinancialSummary
+    extra_fields: dict = Field(default_factory=dict)
+    tool_status: ToolStatus
+    data_quality_notes: List[str] = Field(default_factory=list)
+    errors: List[Error] = Field(default_factory=list)
+
+class ResearchAgentOutput(BaseModel):
+    agent: str = "research_agent"
+    period: str = "ttm"
+    requested_tickers: List[str]
+    results: List[Result] = Field(default_factory=list)
+    errors: List[Error] = Field(default_factory=list)
+
+
+
+class WarrenBuffettSignal(BaseModel):
+    """The final output of the Warren Buffett agent."""
+    signal: Literal["bullish", "bearish", "neutral"] = Field(description="The investment signal for the stock.")
+    confidence: int = Field(description="The confidence level of the signal, from 0 to 100.")
+    reasoning: str = Field(description="A brief reasoning for the signal.")

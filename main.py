@@ -12,9 +12,9 @@ from ai_agents.portfolio_and_risk_manager import run_portfolio_manager_agent
 from ai_agents.what_if_agent import run_what_if_agent
 from ai_agents.final_orchestrator_agent import run_final_orchestrator_agent
 from ai_agents.monitor import run_monitor_agent
-from ai_agents.tickers import TICKERS
+from models.tickers import TICKERS
 from models.financial_summary import FinancialSummary
-from tools.get_stock_price import get_stock_prices
+from tools.get_stock_prices import get_stock_prices
 
 console = Console()
 

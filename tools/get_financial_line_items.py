@@ -1,12 +1,11 @@
 import os
 import requests
 from dotenv import load_dotenv
-
 from langchain.tools import tool
 
 load_dotenv()
 
-API_KEY = os.getenv("FINDAT_API_KEY")
+FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get financial line items for a given ticker symbol")
 def get_financial_line_items(tickers, line_items=None, period="ttm", limit=30):
@@ -40,17 +39,19 @@ def get_financial_line_items(tickers, line_items=None, period="ttm", limit=30):
 
     url = "https://api.financialdatasets.ai/financials/search/line-items"
 
-    if not API_KEY:
+    # check if API key is set
+    if not FINDAT_API_KEY:
         raise ValueError(
-            "API key for Financial Datasets not found. Please set the FINANCIAL_DATASETS_API_KEY environment variable."
+            "API key for Financial Datasets not found. Please set the FINDAT_API_KEY environment variable."
         )
 
     # add your API key to the headers
     headers = {
-        "X-API-KEY": API_KEY, 
+        "X-API-KEY": FINDAT_API_KEY, 
         "Content-Type": "application/json"
         }
 
+    # prepare the payload
     payload = {
         "tickers": tickers,
         "line_items": line_items,

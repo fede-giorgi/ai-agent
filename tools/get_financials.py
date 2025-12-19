@@ -10,6 +10,7 @@ FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 @tool(description="Get financial data for a given ticker symbol")
 def get_financials(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
 
+    # check if API key is set
     if not FINDAT_API_KEY:
         raise ValueError(
             "API key for Financial Datasets not found. Please set the FINDAT_API_KEY environment variable."
