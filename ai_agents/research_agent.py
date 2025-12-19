@@ -29,7 +29,7 @@ REQUIRED_LIST = [
     "current_liabilities",
 ]
 
-system_instruction = SystemMessage(
+system_instruction = SystemMessage(content=
     """You are ResearchAgent. Your goal is to process the raw JSON data from financial tools (`get_financials`, `get_metrics`, `get_financial_line_items`, `get_stock_prices`) for a given stock ticker and structure it into a specific JSON format defined by the `Result` model.
 
         Rules:
@@ -44,7 +44,7 @@ system_instruction = SystemMessage(
     """
 )
 
-user_content = HumanMessage(
+user_content = HumanMessage(content=
     """Please process the following data for the ticker: {ticker}
 
     Raw output from `get_financials`:

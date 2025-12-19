@@ -10,7 +10,7 @@ from ai_agents.research_agent import run_research_agent
 from ai_agents.warren_buffet_agent import warren_buffett_agent
 from ai_agents.portfolio_and_risk_manager import run_portfolio_manager_agent
 from ai_agents.what_if_agent import run_what_if_agent
-from ai_agents.final_orchestrator_agent import run_final_orchestrator_agent
+from ai_agents.final_orchestrator_agent import run_final_orchestrator_agent, generate_ascii_chart
 from ai_agents.monitor import run_monitor_agent
 from models.tickers import TICKERS
 from models.financial_summary import FinancialSummary
@@ -212,13 +212,15 @@ def main():
         console.print(f"[bold]Simulated Portfolio:[/bold] {initial_portfolio}")
         console.print(f"[bold]Simulated Capital:[/bold] ${initial_capital:,.2f}")
 
-        # Get feedback from previous iteration
-        previous_feedback = history[-1] if history else None
+        # Display History for User
+        if history:
+            console.print("\n[bold]History of Iterations:[/bold]")
+            console.print_json(data=history)
 
         # 3. Portfolio Manager Agent
         console.print("\n[bold cyan]--- Portfolio Manager Agent ---[/bold cyan]")
         pm_output = run_portfolio_manager_agent(
-            initial_portfolio, initial_capital, risk_profile, warren_buffett_signals, price_map, previous_feedback
+            initial_portfolio, initial_capital, risk_profile, warren_buffett_signals, price_map, history
         )
         console.print_json(data=pm_output)
         
@@ -226,15 +228,17 @@ def main():
 
         # 4. Monitor Agent (Check constraints)
         console.print("\n[bold cyan]--- Monitor Agent ---[/bold cyan]")
-        monitor_output = run_monitor_agent(proposed_trades, initial_portfolio, initial_capital, price_map)
+        monitor_output = run_monitor_agent(proposed_trades, initial_portfolio, initial_capital, price_map, history)
         console.print_json(data=monitor_output)
         
         is_valid = monitor_output.get("is_valid", False)
         
-        # 5. What If Agent (Challenger)
-        console.print("\n[bold cyan]--- What If Agent ---[/bold cyan]")
-        what_if_output = run_what_if_agent(initial_portfolio, initial_capital, proposed_trades, price_map, warren_buffett_signals)
-        console.print_json(data=what_if_output)
+        # 5. What If Agent (Challenger) - Skip on last iteration
+        what_if_output = {}
+        if i < 10:
+            console.print("\n[bold cyan]--- What If Agent ---[/bold cyan]")
+            what_if_output = run_what_if_agent(initial_portfolio, initial_capital, proposed_trades, price_map, warren_buffett_signals, history)
+            console.print_json(data=what_if_output)
         
         # Store iteration data
         iteration_data = {
@@ -249,6 +253,9 @@ def main():
     console.rule("[bold green]Final Decision[/bold green]")
     console.print(Panel(signals_text, title="Warren Buffett Signals", expand=False))
     
+    # Display ASCII Chart
+    console.print(generate_ascii_chart(history))
+
     console.print("\n[bold cyan]--- Final Orchestrator Agent ---[/bold cyan]")
     final_output = run_final_orchestrator_agent(
         initial_portfolio, initial_capital, warren_buffett_signals, price_map, history
