@@ -69,8 +69,8 @@ graph TD
 ## 📦 InstallationFollow these steps to set up the project locally.
 1. Clone the RepositoryBash
  ```bash
-   git clone [https://github.com/your-username/ai-financial-agent.git](https://github.com/your-username/ai-financial-agent.git)
-   cd ai-financial-agent
+   git clone https://github.com/fede-giorgi/ai-agent.git
+    cd ai-agent
    ```
 2. Create a Virtual Environment (Recommended)
    ```python
