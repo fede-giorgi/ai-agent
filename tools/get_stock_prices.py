@@ -9,7 +9,12 @@ load_dotenv()
 FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get historical stock prices for a given ticker symbol")
-def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, interval: str = 'day', interval_multiplier: int = 1):
+def get_stock_prices(ticker: str, 
+                     start_date: str = None, 
+                     end_date: str = None, 
+                     interval: str = 'day', 
+                     interval_multiplier: int = 1
+                     ) -> dict:
     """
     Retrieves historical stock prices for a given ticker.
     
@@ -26,10 +31,20 @@ def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, 
 
 
     if not end_date:
-        end_date = datetime.now().strftime('%Y-%m-%d')
+        dt_end = datetime.now()
+    else:
+        # Validate end_date format
+        try:
+            dt_end = datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            raise ValueError("end_date must be in YYYY-MM-DD format")
+
     if not start_date:
         # Default to 7 days lookback to ensure we catch a trading day
-        start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        dt_start = dt_end - timedelta(days=7)
+        start_date = dt_start.strftime('%Y-%m-%d')
+
+    end_date = dt_end.strftime('%Y-%m-%d')
 
     # create the URL
     url = (
@@ -59,5 +74,5 @@ def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, 
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    ans = response.json()
-    return ans
+    data = response.json()
+    return data
