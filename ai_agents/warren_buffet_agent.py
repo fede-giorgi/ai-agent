@@ -40,7 +40,7 @@ def warren_buffett_agent(summary: FinancialSummary) -> dict:
 
     structured_llm = llm.with_structured_output(WarrenBuffettSignal)
 
-    system_instruction = SystemMessage("""You are a virtual Warren Buffett. Your goal is to evaluate a company based on value investing principles and provide a final investment signal.
+    system_instruction = SystemMessage(content="""You are a virtual Warren Buffett. Your goal is to evaluate a company based on value investing principles and provide a final investment signal.
 
     Key Questions to Answer:
     - Is the business understandable and within a circle of competence? (Assume yes).
@@ -54,7 +54,7 @@ def warren_buffett_agent(summary: FinancialSummary) -> dict:
     - Assign a confidence score (0-100).
     - Provide a brief, decisive reasoning.""")
             
-    user_content = HumanMessage(f"""Here is the quantitative analysis for {summary.ticker}:{json.dumps(analysis_results, indent=2)}
+    user_content = HumanMessage(content=f"""Here is the quantitative analysis for {summary.ticker}:{json.dumps(analysis_results, indent=2)}
     Please generate the investment signal now.""")
     
     final_signal = structured_llm.invoke([system_instruction, user_content])

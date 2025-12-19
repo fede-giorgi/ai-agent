@@ -9,6 +9,7 @@ def run_monitor_agent(
     current_portfolio: Dict[str, int],
     available_capital: float,
     price_map: Dict[str, float],
+    history: List[Dict[str, Any]] = None # Added history for standardization
     ) -> dict:
     """
     Runs the Monitor Agent to validate the proposed configuration.

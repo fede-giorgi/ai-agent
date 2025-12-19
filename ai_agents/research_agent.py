@@ -2,7 +2,6 @@ import json
 from pydantic import BaseModel, Field
 from typing import List
 
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from llm import get_llm
@@ -29,76 +28,6 @@ REQUIRED_LIST = [
     "current_liabilities",
 ]
 
-system_instruction = SystemMessage(
-    """You are ResearchAgent. Your goal is to process the raw JSON data from financial tools (`get_financials`, `get_metrics`, `get_financial_line_items`, `get_stock_prices`) for a given stock ticker and structure it into a specific JSON format defined by the `Result` model.
-
-        Rules:
-        - You will be given the raw JSON output from each of the three tools.
-        - Populate the `financial_summary` field using the provided data. All fields in `FinancialSummary` must be present; use null if a value is not available.
-        - Specifically for the `price` field in `FinancialSummary`, extract the latest closing price from the `get_stock_prices` output.
-        - Any keys from the raw tool output that are not part of the `FinancialSummary` model should be placed in the `extra_fields` dictionary.
-        - If a tool failed (indicated by an error message instead of JSON), reflect this in the `tool_status` and `errors` fields.
-        - Analyze the provided data for any potential inconsistencies or quality issues and add notes to `data_quality_notes`. For example, if `revenue` from one tool is drastically different from another.
-        - Use numbers when the source data is a number. If it's a string that looks like a number, try to convert it. If unsure, keep the original value and add a note to `data_quality_notes`. Do not use `NaN` or `Infinity`; use `null` instead.
-        - Output a valid JSON object matching the `Result` model only. Do not add any extra prose or markdown.
-    """
-)
-
-user_content = HumanMessage(
-    """Please process the following data for the ticker: {ticker}
-
-    Raw output from `get_financials`:
-    {financials_data}
-
-    Raw output from `get_metrics`:
-    {metrics_data}
-
-    Raw output from `get_financial_line_items`:
-    {line_items_data}
-
-    Raw output from `get_stock_prices`:
-    {prices_data}
-    """
-)
-
-
-prompt_template = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """You are ResearchAgent. Your goal is to process the raw JSON data from financial tools (`get_financials`, `get_metrics`, `get_financial_line_items`, `get_stock_prices`) for a given stock ticker and structure it into a specific JSON format defined by the `Result` model.
-
-            Rules:
-            - You will be given the raw JSON output from each of the three tools.
-            - Populate the `financial_summary` field using the provided data. All fields in `FinancialSummary` must be present; use null if a value is not available.
-            - Specifically for the `price` field in `FinancialSummary`, extract the latest closing price from the `get_stock_prices` output.
-            - Any keys from the raw tool output that are not part of the `FinancialSummary` model should be placed in the `extra_fields` dictionary.
-            - If a tool failed (indicated by an error message instead of JSON), reflect this in the `tool_status` and `errors` fields.
-            - Analyze the provided data for any potential inconsistencies or quality issues and add notes to `data_quality_notes`. For example, if `revenue` from one tool is drastically different from another.
-            - Use numbers when the source data is a number. If it's a string that looks like a number, try to convert it. If unsure, keep the original value and add a note to `data_quality_notes`. Do not use `NaN` or `Infinity`; use `null` instead.
-            - Output a valid JSON object matching the `Result` model only. Do not add any extra prose or markdown.
-            """,
-        ),
-        (
-            "human",
-            """Please process the following data for the ticker: {ticker}
-
-            Raw output from `get_financials`:
-            {financials_data}
-
-            Raw output from `get_metrics`:
-            {metrics_data}
-
-            Raw output from `get_financial_line_items`:
-            {line_items_data}
-
-            Raw output from `get_stock_prices`:
-            {prices_data}
-            """,
-                    ),
-                ]
-            )
-
 
 def run_research_agent(
         tickers: List[str],
@@ -109,7 +38,6 @@ def run_research_agent(
     """
     llm = get_llm()
     structured_llm = llm.with_structured_output(Result)
-    processing_chain = prompt_template | structured_llm
 
     agent_output = ResearchAgentOutput(requested_tickers=tickers)
 
@@ -178,13 +106,37 @@ def run_research_agent(
             continue
 
         try:
-            result = processing_chain.invoke({
-                "ticker": ticker,
-                "financials_data": financials_data_str,
-                "metrics_data": metrics_data_str,
-                "line_items_data": line_items_data_str,
-                "prices_data": prices_data_str,
-            })
+            ########################################################
+            # This is the system message
+            ########################################################
+            system_message = SystemMessage(content="""You are ResearchAgent. Your goal is to process the raw JSON data from financial tools (`get_financials`, `get_metrics`, `get_financial_line_items`, `get_stock_prices`) for a given stock ticker and structure it into a specific JSON format defined by the `Result` model.
+            Rules:
+            - You will be given the raw JSON output from each of the three tools.
+            - Populate the `financial_summary` field using the provided data. All fields in `FinancialSummary` must be present; use null if a value is not available.
+            - Specifically for the `price` field in `FinancialSummary`, extract the latest closing price from the `get_stock_prices` output.
+            - Any keys from the raw tool output that are not part of the `FinancialSummary` model should be placed in the `extra_fields` dictionary.
+            - If a tool failed (indicated by an error message instead of JSON), reflect this in the `tool_status` and `errors` fields.
+            - Analyze the provided data for any potential inconsistencies or quality issues and add notes to `data_quality_notes`. For example, if `revenue` from one tool is drastically different from another.
+            - Use numbers when the source data is a number. If it's a string that looks like a number, try to convert it. If unsure, keep the original value and add a note to `data_quality_notes`. Do not use `NaN` or `Infinity`; use `null` instead.
+            - Output a valid JSON object matching the `Result` model only. Do not add any extra prose or markdown.
+            """)
+            ########################################################
+            # This is the human message
+            ########################################################
+            human_message = HumanMessage(content=f"""Please process the following data for the ticker: {ticker}
+            Raw output from `get_financials`:
+            {financials_data_str}
+
+            Raw output from `get_metrics`:
+            {metrics_data_str}
+
+            Raw output from `get_financial_line_items`:
+            {line_items_data_str}
+
+            Raw output from `get_stock_prices`:
+            {prices_data_str}
+            """)
+            result = structured_llm.invoke([system_message, human_message])
             result.tool_status = ToolStatus(**tool_status)
             result.errors.extend(errors)
             agent_output.results.append(result)
@@ -192,6 +144,4 @@ def run_research_agent(
             
         except Exception as e:
             agent_output.errors.append(Error(tool="processing_chain", message=str(e), ticker=ticker))
-
-
     return agent_output.model_dump_json(indent=2)
