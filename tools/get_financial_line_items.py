@@ -8,7 +8,12 @@ load_dotenv()
 FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get financial line items for a given ticker symbol")
-def get_financial_line_items(tickers, line_items=None, period="ttm", limit=30):
+def get_financial_line_items(tickers: list[str], 
+                             line_items: list[str], 
+                             period: str = "annual", 
+                             limit: int = 30,
+                             end_date: str = None
+                             ) -> dict:
     """
     Retrieves specific financial line items for a list of tickers, including:
     * `capital_expenditure`
@@ -67,5 +72,19 @@ def get_financial_line_items(tickers, line_items=None, period="ttm", limit=30):
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    ans = response.json()
-    return ans
+    search_results = response.json().get("search_results")
+
+    if end_date and search_results:
+        # Keep only past reports (relative to the end_date)
+        filtered = [
+            f for f in search_results
+            if f.get('report_period') and f.get('report_period') <= end_date
+        ]
+
+        if filtered:
+            return filtered
+        else:
+            return {"error": f"No data found before {end_date}"}
+
+    # return all search results if no end_date is specified
+    return search_results
