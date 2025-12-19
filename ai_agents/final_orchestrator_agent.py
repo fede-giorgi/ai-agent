@@ -3,6 +3,7 @@ from typing import Dict, List, Any
 from llm import get_llm
 from langchain_core.messages import SystemMessage, HumanMessage
 from rich.console import Console
+from rich.table import Table
 
 def run_final_orchestrator_agent(
     initial_portfolio: Dict[str, int],
@@ -64,34 +65,51 @@ def run_final_orchestrator_agent(
             "final_trades": []
         }
 
-def generate_ascii_chart(history: List[Dict[str, Any]]) -> str:
+def generate_ascii_chart(history: List[Dict[str, Any]]) -> Table:
     """
-    Generates a simple ASCII chart showing trade proposals over iterations.
+    Generates a Rich Table showing trade proposals (quantities) over iterations for both agents.
     """
-    chart = "\nTrade Proposals Over Iterations:\n"
-    chart += "   +----------------------------------------------------+\n"
+    table = Table(title="Trade Proposals Over Iterations (PM vs What-If)")
+    table.add_column("Iter", justify="center", style="cyan")
+    table.add_column("Ticker", style="magenta")
+    table.add_column("PM Proposal", justify="right", style="green")
+    table.add_column("What-If Proposal", justify="right", style="blue")
     
-    # Collect all tickers involved
-    tickers = set()
+    # Iterate through history to populate the table
     for iteration in history:
+        iter_num = iteration.get("iteration", "?")
+        
+        # Collect trades from PM
+        pm_trades = {}
         if "pm_proposal" in iteration and "proposed_trades" in iteration["pm_proposal"]:
             for trade in iteration["pm_proposal"]["proposed_trades"]:
-                tickers.add(trade["ticker"])
-    
-    for ticker in sorted(list(tickers)):
-        chart += f"   | {ticker:<4} | "
-        for iteration in history:
-            shares = 0
-            if "pm_proposal" in iteration and "proposed_trades" in iteration["pm_proposal"]:
-                for trade in iteration["pm_proposal"]["proposed_trades"]:
-                    if trade["ticker"] == ticker:
-                        shares = trade["shares"] if trade["action"] == "buy" else -trade["shares"]
+                qty = trade["shares"] if trade["action"] == "buy" else -trade["shares"]
+                pm_trades[trade["ticker"]] = qty
+
+        # Collect trades from What-If
+        wi_trades = {}
+        if "what_if_critique" in iteration and "alternative_scenario" in iteration["what_if_critique"]:
+            alt = iteration["what_if_critique"]["alternative_scenario"]
+            if alt and "proposed_trades" in alt:
+                for trade in alt["proposed_trades"]:
+                    qty = trade["shares"] if trade["action"] == "buy" else -trade["shares"]
+                    wi_trades[trade["ticker"]] = qty
+
+        # Union of tickers for this iteration
+        all_tickers = set(pm_trades.keys()) | set(wi_trades.keys())
+        
+        if not all_tickers:
+            table.add_row(str(iter_num), "-", "-", "-")
+            continue
+
+        for i, ticker in enumerate(sorted(all_tickers)):
+            pm_qty = f"{pm_trades.get(ticker, 0):+d}" if ticker in pm_trades else "-"
+            wi_qty = f"{wi_trades.get(ticker, 0):+d}" if ticker in wi_trades else "-"
             
-            # Simple representation: + for buy, - for sell, . for none
-            symbol = "+" if shares > 0 else "-" if shares < 0 else "."
-            chart += f"{symbol} "
-        chart += "|\n"
-    
-    chart += "   +----------------------------------------------------+\n"
-    chart += "     Iter:  1 2 3 4 5 6 7 8 9 10\n"
-    return chart
+            # Only show iteration number on the first row of the group
+            row_iter = str(iter_num) if i == 0 else ""
+            table.add_row(row_iter, ticker, pm_qty, wi_qty)
+        
+        table.add_section()
+
+    return table

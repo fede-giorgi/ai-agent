@@ -1,9 +1,11 @@
 import json
 import sys
+import time
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+from rich.markdown import Markdown
 from datetime import datetime, timedelta
 
 from ai_agents.research_agent import run_research_agent
@@ -18,9 +20,10 @@ from tools.get_stock_prices import get_stock_prices
 
 console = Console()
 
-def get_portfolio():
+def get_portfolio(capital: float):
     """
     Prompts the user to either provide their existing portfolio or use a default one.
+    If no portfolio is provided, it calculates an initial allocation based on the capital.
     """
     has_portfolio = console.input("Do you have an existing portfolio? (yes/no): ").lower()
     
@@ -37,12 +40,31 @@ def get_portfolio():
                 console.print("Invalid format. Please use 'TICKER QUANTITY' (e.g., 'AAPL 15').")
         return portfolio
     else:
-        console.print("Creating a standard portfolio.")
-        return {
-            "AAPL": 3333,
-            "MSFT": 3333,
-            "NVDA": 3333
-        }
+        console.print("No existing portfolio. Calculating initial allocation based on capital...", style="yellow")
+        tickers = ["AAPL", "MSFT", "NVDA"]
+        portfolio = {}
+        
+        # Allocate evenly (1/3 of capital per stock)
+        per_stock_capital = capital / len(tickers)
+        
+        for ticker in tickers:
+            try:
+                # Use .func to call the tool directly if available, otherwise call as callable
+                price_data = get_stock_prices.func(ticker=ticker) if hasattr(get_stock_prices, 'func') else get_stock_prices(ticker=ticker)
+                
+                if price_data and 'prices' in price_data and price_data['prices']:
+                    price = price_data['prices'][-1].get('close', 0)
+                    if price > 0:
+                        shares = int(per_stock_capital // price)
+                        if shares > 0:
+                            portfolio[ticker] = shares
+            except Exception as e:
+                console.print(f"Error fetching price for {ticker}: {e}", style="red")
+        
+        if not portfolio:
+            console.print("Insufficient capital to buy shares or API error. Starting with empty portfolio.", style="red")
+            
+        return portfolio
 
 def get_capital():
     """
@@ -129,20 +151,26 @@ def main():
     """
     Main function to run the financial agent.
     """
+    # Start Timer
+    start_time = time.time()
+    
     # Check for debug mode
     debug_mode = "--debug" in sys.argv
+
+    # Enable recording to save log later
+    console.record = True
 
     console.print("--- Welcome to the Financial Agent ---", style="bold green")
     
     if debug_mode:
         console.print("[bold red]DEBUG MODE ENABLED[/bold red]")
-        portfolio = {}
         capital = 500000
+        portfolio = get_portfolio(capital) # Will use default logic if 'no' is simulated, but here we might want to skip input
         risk_profile = 7
         backtesting_date = None
     else:
-        portfolio = get_portfolio()
         capital = get_capital()
+        portfolio = get_portfolio(capital)
         risk_profile = get_risk_profile()
         backtesting_date = get_backtesting_date()
 
@@ -260,7 +288,12 @@ def main():
     final_output = run_final_orchestrator_agent(
         initial_portfolio, initial_capital, warren_buffett_signals, price_map, history
     )
-    console.print_json(data=final_output)
+    
+    # Print Final Decision with Markdown
+    reasoning = final_output.get("final_decision_reasoning", "No reasoning provided.")
+    console.print(Panel(Markdown(reasoning), title="Final Decision Reasoning", border_style="green"))
+    
+    console.print_json(data={"final_trades": final_output.get("final_trades"), "expected_portfolio": final_output.get("expected_portfolio")})
     
     final_trades = final_output.get("final_trades", [])
     
@@ -357,6 +390,15 @@ def main():
             title="Backtest Result",
             style="green" if total_return > 0 else "red"
         ))
+        
+    # End Timer
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    console.print(f"\n[bold]Total Execution Time:[/bold] {elapsed_time:.2f} seconds")
+
+    # Save Log
+    console.save_text("financial_agent_session.txt")
+    console.print("\n[dim]Session log saved to 'financial_agent_session.txt'[/dim]")
 
 if __name__ == "__main__":
     try:
