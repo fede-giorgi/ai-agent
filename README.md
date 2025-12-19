@@ -15,20 +15,20 @@ The system operates on a sequential, loop-based architecture. Information flows 
 ```mermaid
 graph TD
     %% Nodes
-    User([User Config\nRisk, Capital])
-    Tools[(Financial\nTools API)]
-    Research[Research\nAgent]
-    Buffett[Warren Buffett\nAgent]
+    User([User Config: Risk, Capital])
+    Tools[(Financial Tools API)]
+    Research[Research Agent]
+    Buffett[Warren Buffett Agent]
     
     subgraph "Trading Loop (Iterative)"
         direction TB
-        PM[Portfolio\nManager Agent]
-        Monitor[Monitor\nAgent]
-        WhatIf[What-If\nAgent]
+        PM[Portfolio Manager Agent]
+        Monitor[Monitor Agent]
+        WhatIf[What-If Agent]
     end
     
-    Final[Final Decision\nAgent]
-    Output([Final\nPortfolio])
+    Final[Final Decision Agent]
+    Output([Final Portfolio])
 
     %% Edges
     User --> Research
