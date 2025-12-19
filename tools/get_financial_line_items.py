@@ -72,7 +72,8 @@ def get_financial_line_items(tickers: list[str],
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    search_results = response.json().get("search_results")
+    data = response.json()
+    search_results = data.get("search_results")
 
     if end_date and search_results:
         # Keep only past reports (relative to the end_date)
@@ -82,9 +83,9 @@ def get_financial_line_items(tickers: list[str],
         ]
 
         if filtered:
-            return filtered
+            return {"search_results": filtered}
         else:
             return {"error": f"No data found before {end_date}"}
 
     # return all search results if no end_date is specified
-    return search_results
+    return data

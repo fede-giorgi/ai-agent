@@ -41,7 +41,8 @@ def get_financials(ticker: str,
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    financials = response.json().get('financials')
+    data = response.json()
+    financials = data.get('financials')
 
     selected_financials = {}
 
@@ -72,4 +73,4 @@ def get_financials(ticker: str,
             return {"error": f"No financial data found before {end_date}"}
 
     # return all financials if no end_date is specified
-    return financials
+    return data

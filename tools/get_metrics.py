@@ -83,7 +83,8 @@ def get_metrics(ticker: str,
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    metrics = response.json().get('financial_metrics')
+    data = response.json()
+    metrics = data.get('financial_metrics')
 
     if end_date and metrics:
 
@@ -94,9 +95,9 @@ def get_metrics(ticker: str,
         ]
         
         if filtered:
-            return filtered
+            return {"financial_metrics": filtered}
         else:
             return {"error": f"No data found before {end_date}"}
 
     # return all metrics if no end_date is specified
-    return metrics
+    return data
