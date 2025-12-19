@@ -11,7 +11,8 @@ FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 def get_financials(ticker: str, 
                    period: str = 'annual', 
                    limit: int = 10, 
-                   end_date: str = None) -> dict:
+                   end_date: str = None
+                   ) -> dict:
 
     # check if API key is set
     if not FINDAT_API_KEY:
@@ -63,12 +64,12 @@ def get_financials(ticker: str,
             if filtered:
                 selected_financials[key] = filtered 
             else:
-                print(f"No data found for {key} before {end_date}")
+                print(f"Warning: No data found for {key} before {end_date}")
 
-        return selected_financials
-
+        if selected_financials:
+            return selected_financials
+        else:
+            return {"error": f"No financial data found before {end_date}"}
 
     # return all financials if no end_date is specified
     return financials
-
-#%%

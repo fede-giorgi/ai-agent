@@ -7,10 +7,11 @@ load_dotenv()
 
 FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
-@tool(description="Get financial matrics for a given ticker symbol")
+@tool(description="Get historical financial metrics for a given ticker symbol")
 def get_metrics(ticker: str, 
                 period: str = 'ttm', 
-                limit: int = 30
+                limit: int = 10,
+                end_date: str = None
                 ) -> dict:
     '''
     The snapshot object contains the following fields:
@@ -68,8 +69,10 @@ def get_metrics(ticker: str,
 
     # create the URL
     url = (
-        f'https://api.financialdatasets.ai/financial-metrics/snapshot'
+        f'https://api.financialdatasets.ai/financial-metrics'
         f'?ticker={ticker}'
+        f'&period={period}'
+        f'&limit={limit}'
     )
 
     # make API request
@@ -80,6 +83,20 @@ def get_metrics(ticker: str,
         return {"error": f"API error {response.status_code} - {response.text}"}
 
     # parse data from the response
-    data = response.json()
-    return data.get('snapshot')
+    metrics = response.json().get('financial_metrics')
 
+    if end_date and metrics:
+
+        # Keep only past reports (relative to the end_date)
+        filtered = [
+            m for m in metrics
+            if m.get('report_period') and m.get('report_period') <= end_date
+        ]
+        
+        if filtered:
+            return filtered
+        else:
+            return {"error": f"No data found before {end_date}"}
+
+    # return all metrics if no end_date is specified
+    return metrics
