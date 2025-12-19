@@ -68,7 +68,7 @@ graph TD
 
 ## 📦 InstallationFollow these steps to set up the project locally.
 1. Clone the RepositoryBash
- ```bash
+     ```bash
    git clone https://github.com/fede-giorgi/ai-agent.git
     cd ai-agent
    ```
@@ -93,9 +93,9 @@ graph TD
 
 ## 💻 Usage 
 Run the main orchestrator script to start the interactive session:
-```bash
-  python main.py
-```
+    ```bash
+      python main.py
+    ```
 Interactive Workflow
 - Capital: Enter your available capital (e.g., 100000).Portfolio: Input existing holdings (optional) or start fresh.
 - Risk Profile: Select a level from 1 (Ultra Conservative) to 10 (Highly Speculative).
