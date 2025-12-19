@@ -1,6 +1,9 @@
 import json
+import sys
 from rich.console import Console
 from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
 from datetime import datetime, timedelta
 
 from ai_agents.research_agent import run_research_agent
@@ -125,12 +128,22 @@ def main():
     """
     Main function to run the financial agent.
     """
+    # Check for debug mode
+    debug_mode = "--debug" in sys.argv
+
     console.print("--- Welcome to the Financial Agent ---", style="bold green")
     
-    portfolio = get_portfolio()
-    capital = get_capital()
-    risk_profile = get_risk_profile()
-    backtesting_date = get_backtesting_date()
+    if debug_mode:
+        console.print("[bold red]DEBUG MODE ENABLED[/bold red]")
+        portfolio = {}
+        capital = 500000
+        risk_profile = 7
+        backtesting_date = None
+    else:
+        portfolio = get_portfolio()
+        capital = get_capital()
+        risk_profile = get_risk_profile()
+        backtesting_date = get_backtesting_date()
 
     console.print("\n--- Your Configuration ---", style="bold green")
     console.print(f"Portfolio: {portfolio}")
@@ -140,7 +153,11 @@ def main():
 
     console.print("\n--- Starting Financial Analysis ---", style="bold green")
     
-    tickers_to_research = get_tickers_to_research()
+    if debug_mode:
+        tickers_to_research = ["AAPL", "MSFT", "NVDA"]
+    else:
+        tickers_to_research = get_tickers_to_research()
+
     console.print(f"Researching {len(tickers_to_research)} tickers...")
     research_output_json = run_research_agent(tickers_to_research)
     research_output = json.loads(research_output_json)
@@ -162,61 +179,62 @@ def main():
             console.print(f"  - {ticker}: Could not get analysis.")
     console.print("Warren Buffett analysis complete.")
 
-    # Build Price Map
-    console.print("\n--- Fetching Stock Prices ---", style="bold yellow")
-    price_map = {}
-    target_end_date = backtesting_date if backtesting_date else datetime.now().strftime('%Y-%m-%d')
-    target_start_date = (datetime.strptime(target_end_date, '%Y-%m-%d') - timedelta(days=7)).strftime('%Y-%m-%d')
-
-    for ticker in financial_data.keys():
-        try:
-            prices_data = get_stock_prices.func(
-                ticker=ticker,
-                start_date=target_start_date,
-                end_date=target_end_date
-            )
-            if prices_data and 'prices' in prices_data and prices_data['prices']:
-                price_map[ticker] = float(prices_data['prices'][-1]['close'])
-            else:
-                console.print(f"Warning: Could not fetch price for {ticker}")
-                price_map[ticker] = 0.0
-        except Exception as e:
-            console.print(f"Error fetching price for {ticker}: {e}")
-            price_map[ticker] = 0.0
+    # Build Price Map from Financial Data
+    # Prices are now fetched by the research agent and stored in FinancialSummary
+    price_map = {
+        ticker: data.price if data.price else 0.0 
+        for ticker, data in financial_data.items()
+    }
+    
     console.print(f"Prices fetched: {price_map}")
 
     # Main loop for 10 iterations
+    history = []
     for i in range(1, 11):
-        console.print(f"\n--- Iteration {i}/10 ---", style="bold yellow")
+        console.rule(f"[bold yellow]Iteration {i}/10[/bold yellow]")
+
+        # 1. Display Context (Signals & Current State)
+        signals_text = Text()
+        for ticker, signal_data in warren_buffett_signals.items():
+            s = signal_data.get('signal', 'neutral').upper()
+            c = signal_data.get('confidence', 0)
+            color = "green" if s == "BULLISH" else "red" if s == "BEARISH" else "yellow"
+            signals_text.append(f"- {ticker}: {s} (Confidence: {c}%)\n", style=color)
+        
+        console.print(Panel(signals_text, title="Warren Buffett Signals", expand=False))
+        console.print(f"[bold]Current Portfolio:[/bold] {portfolio}")
+        console.print(f"[bold]Available Capital:[/bold] ${capital:,.2f}")
 
         # 3. Portfolio Manager Agent
-        console.print("Running Portfolio Manager...")
+        console.print("\n[bold cyan]--- Portfolio Manager Agent ---[/bold cyan]")
         pm_output = run_portfolio_manager_agent(
             portfolio, capital, risk_profile, warren_buffett_signals, price_map
         )
+        console.print_json(data=pm_output)
+        
         proposed_trades = pm_output.get("proposed_trades", [])
-        console.print(f"Proposed trades: {proposed_trades}")
 
         if not proposed_trades:
-            console.print("No trades proposed. Ending iteration.")
+            console.print("[yellow]No trades proposed. Ending iteration.[/yellow]")
+            history.append({"iteration": i, "status": "No Trades", "portfolio": portfolio.copy(), "capital": capital})
             continue
 
         # 4. Monitor Agent (Check constraints)
-        console.print("Running Monitor Agent...")
+        console.print("\n[bold cyan]--- Monitor Agent ---[/bold cyan]")
         monitor_output = run_monitor_agent(proposed_trades, portfolio, capital, price_map)
+        console.print_json(data=monitor_output)
+        
         is_valid = monitor_output.get("is_valid", False)
-        violations = monitor_output.get("violations", [])
-        console.print(f"Monitor result: Valid={is_valid}")
-        if violations:
-            console.print(f"Violations: {violations}")
         
         if not is_valid:
-            console.print("Invalid trades. Skipping portfolio update.")
+            console.print("[bold red]Invalid trades. Skipping portfolio update.[/bold red]")
+            history.append({"iteration": i, "status": "Invalid", "portfolio": portfolio.copy(), "capital": capital})
             continue
 
         # 5. What If Agent (Simulate)
-        console.print("Running What If Agent...")
+        console.print("\n[bold cyan]--- What If Agent ---[/bold cyan]")
         what_if_output = run_what_if_agent(portfolio, capital, proposed_trades, price_map, warren_buffett_signals)
+        console.print_json(data=what_if_output)
         
         # Update portfolio and capital based on simulation
         # In a real agent loop, the Portfolio Manager might refine based on What-If feedback.
@@ -224,11 +242,28 @@ def main():
         if "after" in what_if_output:
             portfolio = what_if_output["after"].get("portfolio", portfolio)
             capital = what_if_output["after"].get("cash", capital)
-            console.print("Portfolio and Capital updated based on simulation.")
+            console.print("[green]Portfolio and Capital updated based on simulation.[/green]")
+            history.append({"iteration": i, "status": "Executed", "portfolio": portfolio.copy(), "capital": capital})
 
-        console.print(f"--- End of Iteration {i}/10 ---", style="bold yellow")
-        console.print(f"New Portfolio: {portfolio}")
-        console.print(f"Remaining Capital: ${capital:,.2f}")
+    # Final Summary
+    console.rule("[bold green]Final Summary[/bold green]")
+    console.print(Panel(signals_text, title="Warren Buffett Signals", expand=False))
+    
+    summary_table = Table(title="Iteration History")
+    summary_table.add_column("Iter", justify="center")
+    summary_table.add_column("Status", justify="center")
+    summary_table.add_column("Resulting Portfolio", justify="left")
+    summary_table.add_column("Capital", justify="right")
+    
+    for item in history:
+        summary_table.add_row(
+            str(item["iteration"]),
+            f"[green]{item['status']}[/green]" if item["status"] == "Executed" else f"[red]{item['status']}[/red]",
+            str(item["portfolio"]),
+            f"${item['capital']:,.2f}"
+        )
+    
+    console.print(summary_table)
 
 if __name__ == "__main__":
     try:

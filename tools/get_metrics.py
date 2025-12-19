@@ -53,6 +53,11 @@ def get_metrics(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
     - free_cash_flow_per_share (number): Free cash flow divided by shares outstanding.
     '''
     
+    if not FINDAT_API_KEY:
+        raise ValueError(
+            "API key for Financial Datasets not found. Please set the FINDAT_API_KEY environment variable."
+        )
+    
     # add your API key to the headers
     headers = {
         "X-API-KEY": FINDAT_API_KEY

@@ -3,7 +3,8 @@ from typing import Optional
 
 class FinancialSummary(BaseModel):
     ticker: str
-    
+    price: Optional[float] = None
+
     # Metrics from get_metrics
     market_cap: Optional[float] = None
     enterprise_value: Optional[float] = None

@@ -7,7 +7,7 @@ from langchain.tools import tool
 
 load_dotenv()
 
-API_KEY = os.getenv("FINDAT_API_KEY")
+FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get historical stock prices for a given ticker symbol")
 def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, interval: str = 'day', interval_multiplier: int = 1):
@@ -24,11 +24,7 @@ def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, 
     Returns:
         dict: A dictionary containing the stock prices.
     """
-    
-    if not API_KEY:
-        raise ValueError(
-            "API key for Financial Datasets not found. Please set the FINDAT_API_KEY environment variable."
-        )
+
 
     if not end_date:
         end_date = datetime.now().strftime('%Y-%m-%d')
@@ -36,6 +32,7 @@ def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, 
         # Default to 7 days lookback to ensure we catch a trading day
         start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
 
+    # create the URL
     url = (
         f'https://api.financialdatasets.ai/prices/'
         f'?ticker={ticker}'
@@ -45,12 +42,23 @@ def get_stock_prices(ticker: str, start_date: str = None, end_date: str = None, 
         f'&end_date={end_date}'
     )
     
-    headers = {"X-API-KEY": API_KEY}
+    if not FINDAT_API_KEY:
+        raise ValueError(
+            "API key for Financial Datasets not found. Please set the FINDAT_API_KEY environment variable."
+        )
 
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
-        return None
+    # add your API key to the headers
+    headers = {
+        "X-API-KEY": FINDAT_API_KEY
+        }
+
+    # make API request
+    response = requests.get(url, headers=headers)
+
+    # if status code is 400, 401, 402 or 404 return error message
+    if response.status_code != 200:
+        return {"error": f"API error {response.status_code} - {response.text}"}
+
+    # parse data from the response
+    ans = response.json()
+    return ans

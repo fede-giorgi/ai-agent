@@ -15,7 +15,7 @@ def run_portfolio_manager_agent(
     llm = get_llm()
     
     prompt = f"""
-    You are PortfolioManagerAgent. Input: current_portfolio (ticker->shares), available_capital (cash), risk_profile (1-10), warren_signals JSON, and price_map (ticker->estimated_price). Your job: propose a practical set of trades (buy/sell shares) that reflects the Warren agent signals and the user’s risk_profile.
+    You are PortfolioManagerAgent. Your goal is to optimize a stock portfolio based on Warren Buffett-style analysis signals, risk profile, and capital constraints. You must make smart, calculated decisions to maximize long-term value while managing risk.
 
     Inputs:
     - Current Portfolio: {json.dumps(current_portfolio)}
@@ -24,27 +24,35 @@ def run_portfolio_manager_agent(
     - Warren Signals: {json.dumps(warren_signals)}
     - Price Map: {json.dumps(price_map)}
 
-    Interpret signals:
-    - signal ∈ {{bullish, bearish, neutral}}
-    - CI (confidence) is 0–100; treat it as position conviction.
-    - Prefer higher CI bullish for buys; higher CI bearish for sells.
+    Strategy & Logic:
+    1. **Signal Interpretation**:
+       - **Bullish**: Strong buy signal. High confidence (80%+) implies high conviction.
+       - **Bearish**: Strong sell signal. Reduce exposure immediately.
+       - **Neutral**: Hold or trim. Do not add to neutral positions unless they are significantly underweight and fundamentals are still decent.
 
-    Risk behavior:
-    - Low risk (1–3): small changes, diversification, reduce bearish exposure strongly, avoid concentration.
-    - Mid (4–7): moderate changes, scale position sizes with CI.
-    - High (8–10): more aggressive reallocation, allow concentration into top bullish/high-CI names.
+    2. **Risk Management (Risk Profile {risk_profile}/10)**:
+       - **Low Risk (1-3)**: Prioritize capital preservation. Keep a healthy cash buffer (20-40%). Diversify broadly. Sell bearish stocks aggressively.
+       - **Mid Risk (4-7)**: Balanced approach. Cash buffer 5-15%. Scale position sizes based on conviction (Confidence score).
+       - **High Risk (8-10)**: Aggressive growth. Low cash buffer (<5%). Concentrate capital in top highest-confidence Bullish ideas.
 
-    Hard constraints:
+    3. **Position Sizing**:
+       - Calculate a "Target Allocation" for each stock based on: Signal Strength + Confidence + Risk Profile.
+       - Example: A Bullish stock with 90% confidence in a High Risk portfolio might target 20-30% allocation.
+       - A Neutral stock might target 5-10% or 0% depending on better opportunities.
+       - A Bearish stock should target 0%.
+
+    4. **Execution Rules**:
+       - **Sell First**: Generate cash from Bearish/Neutral sells before buying.
+       - **Buy Second**: Allocate available cash to Bullish stocks with highest conviction.
+       - **Rebalance**: If a position exceeds its target weight significantly, trim it.
+
+    Hard Constraints:
     - Trades must be JSON objects: {{"action":"buy|sell","ticker":"XXX","shares":int>0}}
     - No shorting: do not sell more shares than currently held.
     - Only trade tickers with a valid positive price in price_map.
     - Avoid micro trades: skip if trade_value < 100 (shares*price).
     - Try to keep net buy cost within available_capital + expected sell proceeds (assume sells execute first).
 
-    Heuristic sizing (simple and deterministic):
-    - Sell sizing for bearish tickers: sell_fraction = (CI/100) * (1.2 - risk_profile/10); clamp 0..1
-    - Buy sizing for bullish tickers: allocate buy_budget proportional to (CI/100) * (risk_profile/10)
-    - Prefer adding to existing bullish positions before opening new ones unless high risk_profile.
 
     Output JSON ONLY:
     {{
