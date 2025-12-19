@@ -78,22 +78,22 @@ graph TD
    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
     ```
 3. Install Dependencies
-   ``` Bashpip
-   install -r requirements.txt
+   ``` bash
+   pip install -r requirements.txt
    ```
 4. Configure Environment Variables You need API keys for Google Gemini and Financial Datasets. Rename the example environment file and edit it:
-   ``` Bashmv
-   env.example .env
+   ```bash
+   mv env.example .env
    ```
    Open .env and add your keys:
    ```
    GOOGLE_API_KEY=your_gemini_api_key_here
-    FINANCIAL_DATASETS_API_KEY=your_financial_datasets_key_here
-    ```
+   FINANCIAL_DATASETS_API_KEY=your_financial_datasets_key_here
+   ```
 
-💻 ## Usage 
+## 💻 Usage 
 Run the main orchestrator script to start the interactive session:
-```Bash
+```bash
   python main.py
 ```
 Interactive Workflow
