@@ -9,7 +9,7 @@ def run_what_if_agent(
     proposed_trades: List[Dict[str, Union[str, int, float]]],
     price_map: Dict[str, float],
     warren_signals: Dict[str, Any] = None,
-    history: List[Dict[str, Any]] = None # Standardized to history
+    history: List[Dict[str, Any]] = None
     ) -> dict:
     """
     Runs the What-If Agent to simulate the portfolio after applying trades.
