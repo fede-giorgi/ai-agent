@@ -9,7 +9,7 @@ FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get historical financial metrics for a given ticker symbol")
 def get_metrics(ticker: str, 
-                period: str = 'ttm', 
+                period: str = 'annual', 
                 limit: int = 10,
                 end_date: str = None
                 ) -> dict:
