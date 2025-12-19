@@ -20,6 +20,43 @@ from tools.get_stock_prices import get_stock_prices
 
 console = Console()
 
+def generate_portfolio_allocation(capital: float, trading_date: str = None):
+    """
+    Generates an initial portfolio allocation based on capital and stock prices.
+    """
+    console.print("Calculating initial allocation based on capital...", style="yellow")
+    tickers = ["AAPL", "MSFT", "NVDA"]
+    portfolio = {}
+    
+    # Allocate evenly (1/3 of capital per stock)
+    per_stock_capital = capital / len(tickers)
+    
+    for ticker in tickers:
+        try:
+            # Use .func to call the tool directly if available, otherwise call as callable
+            kwargs = {"ticker": ticker}
+            if trading_date:
+                kwargs["end_date"] = trading_date
+                # Set start_date to a week before to ensure we get data
+                dt = datetime.strptime(trading_date, '%Y-%m-%d')
+                kwargs["start_date"] = (dt - timedelta(days=7)).strftime('%Y-%m-%d')
+
+            price_data = get_stock_prices.func(**kwargs) if hasattr(get_stock_prices, 'func') else get_stock_prices(**kwargs)
+            
+            if price_data and 'prices' in price_data and price_data['prices']:
+                price = price_data['prices'][-1].get('close', 0)
+                if price > 0:
+                    shares = int(per_stock_capital // price)
+                    if shares > 0:
+                        portfolio[ticker] = shares
+        except Exception as e:
+            console.print(f"Error fetching price for {ticker}: {e}", style="red")
+    
+    if not portfolio:
+        console.print("Insufficient capital to buy shares or API error. Starting with empty portfolio.", style="red")
+        
+    return portfolio
+
 def get_portfolio(capital: float):
     """
     Prompts the user to either provide their existing portfolio or use a default one.
@@ -29,42 +66,33 @@ def get_portfolio(capital: float):
     
     if has_portfolio == 'yes':
         portfolio = {}
+        console.print("Please enter your portfolio holdings.", style="cyan")
+        console.print("Supported stocks: [bold]AAPL, MSFT, NVDA[/bold]")
+        
         while True:
-            entry = console.input("Enter a stock ticker and quantity (e.g., AAPL 15), or 'done' to finish: ")
-            if entry.lower() == 'done':
+            ticker = console.input("\nEnter stock ticker (e.g. AAPL) or 'done' to finish: ").upper()
+            if ticker == 'DONE':
                 break
-            try:
-                ticker, quantity = entry.split()
-                portfolio[ticker.upper()] = int(quantity)
-            except ValueError:
-                console.print("Invalid format. Please use 'TICKER QUANTITY' (e.g., 'AAPL 15').")
+            
+            if ticker not in ["AAPL", "MSFT", "NVDA"]:
+                console.print(f"[red]'{ticker}' is not supported. Please enter AAPL, MSFT, or NVDA.[/red]")
+                continue
+                
+            while True:
+                try:
+                    qty_str = console.input(f"Enter quantity for {ticker}: ")
+                    quantity = int(qty_str)
+                    if quantity <= 0:
+                        console.print("[red]Quantity must be a positive integer.[/red]")
+                        continue
+                    portfolio[ticker] = quantity
+                    break
+                except ValueError:
+                    console.print("[red]Invalid input. Please enter a valid integer number.[/red]")
+                    
         return portfolio
     else:
-        console.print("No existing portfolio. Calculating initial allocation based on capital...", style="yellow")
-        tickers = ["AAPL", "MSFT", "NVDA"]
-        portfolio = {}
-        
-        # Allocate evenly (1/3 of capital per stock)
-        per_stock_capital = capital / len(tickers)
-        
-        for ticker in tickers:
-            try:
-                # Use .func to call the tool directly if available, otherwise call as callable
-                price_data = get_stock_prices.func(ticker=ticker) if hasattr(get_stock_prices, 'func') else get_stock_prices(ticker=ticker)
-                
-                if price_data and 'prices' in price_data and price_data['prices']:
-                    price = price_data['prices'][-1].get('close', 0)
-                    if price > 0:
-                        shares = int(per_stock_capital // price)
-                        if shares > 0:
-                            portfolio[ticker] = shares
-            except Exception as e:
-                console.print(f"Error fetching price for {ticker}: {e}", style="red")
-        
-        if not portfolio:
-            console.print("Insufficient capital to buy shares or API error. Starting with empty portfolio.", style="red")
-            
-        return portfolio
+        return generate_portfolio_allocation(capital)
 
 def get_capital():
     """
@@ -72,7 +100,10 @@ def get_capital():
     """
     while True:
         try:
-            capital = int(console.input("How much capital do you have for deployment? (1-1,000,000): "))
+            raw_input = console.input("How much capital do you have for deployment? (1-1,000,000): ")
+            # Allow inputs like 10_000 or 10,000
+            clean_input = raw_input.replace("_", "").replace(",", "")
+            capital = float(clean_input)
             if 1 <= capital <= 1_000_000:
                 return capital
             else:
@@ -165,9 +196,9 @@ def main():
     if debug_mode:
         console.print("[bold red]DEBUG MODE ENABLED[/bold red]")
         capital = 500000
-        portfolio = get_portfolio(capital) # Will use default logic if 'no' is simulated, but here we might want to skip input
         risk_profile = 7
-        backtesting_date = None
+        backtesting_date = "2022-01-01"
+        portfolio = generate_portfolio_allocation(capital, backtesting_date)
     else:
         capital = get_capital()
         portfolio = get_portfolio(capital)
@@ -226,8 +257,8 @@ def main():
     initial_portfolio = portfolio.copy()
     initial_capital = capital
 
-    for i in range(1, 11):
-        console.rule(f"[bold yellow]Iteration {i}/10[/bold yellow]")
+    for i in range(1, 6):
+        console.rule(f"[bold yellow]Iteration {i}/5[/bold yellow]")
 
         # 1. Display Context (Signals & Current State)
         signals_text = Text()
@@ -264,7 +295,7 @@ def main():
         
         # 5. What If Agent (Challenger) - Skip on last iteration
         what_if_output = {}
-        if i < 10:
+        if i < 5:
             console.print("\n[bold cyan]--- What If Agent ---[/bold cyan]")
             what_if_output = run_what_if_agent(initial_portfolio, initial_capital, proposed_trades, price_map, warren_buffett_signals, history)
             console.print_json(data=what_if_output)
