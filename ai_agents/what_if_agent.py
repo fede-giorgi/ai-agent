@@ -8,7 +8,7 @@ def run_what_if_agent(
     available_capital: float,
     proposed_trades: List[Dict[str, Union[str, int, float]]],
     price_map: Dict[str, float],
-    warren_signals: Dict[str, Any] = None
+    warren_signals: Dict[str, Any] = None,
     history: List[Dict[str, Any]] = None # Standardized to history
     ) -> dict:
     """

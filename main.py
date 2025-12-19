@@ -27,14 +27,14 @@ def get_portfolio():
     if has_portfolio == 'yes':
         portfolio = {}
         while True:
-            entry = console.input("Enter a stock ticker and quantity (e.g., TSLA 15), or 'done' to finish: ")
+            entry = console.input("Enter a stock ticker and quantity (e.g., AAPL 15), or 'done' to finish: ")
             if entry.lower() == 'done':
                 break
             try:
                 ticker, quantity = entry.split()
                 portfolio[ticker.upper()] = int(quantity)
             except ValueError:
-                console.print("Invalid format. Please use 'TICKER QUANTITY' (e.g., 'TSLA 15').")
+                console.print("Invalid format. Please use 'TICKER QUANTITY' (e.g., 'AAPL 15').")
         return portfolio
     else:
         console.print("Creating a standard portfolio.")
