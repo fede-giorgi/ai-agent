@@ -8,7 +8,10 @@ load_dotenv()
 FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get financial matrics for a given ticker symbol")
-def get_metrics(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
+def get_metrics(ticker: str, 
+                period: str = 'ttm', 
+                limit: int = 30
+                ) -> dict:
     '''
     The snapshot object contains the following fields:
     - ticker (string): the ticker symbol of the company.

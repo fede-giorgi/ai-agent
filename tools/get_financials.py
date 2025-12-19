@@ -8,7 +8,10 @@ load_dotenv()
 FINDAT_API_KEY = os.getenv("FINDAT_API_KEY")
 
 @tool(description="Get financial data for a given ticker symbol")
-def get_financials(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
+def get_financials(ticker: str, 
+                   period: str = 'annual', 
+                   limit: int = 10, 
+                   end_date: str = None) -> dict:
 
     # check if API key is set
     if not FINDAT_API_KEY:
@@ -39,4 +42,33 @@ def get_financials(ticker: str, period: str = 'ttm', limit: int = 30) -> dict:
     # parse data from the response
     financials = response.json().get('financials')
 
+    selected_financials = {}
+
+    if end_date and financials:
+        # Handle list vs. dict format from the API response
+        aggregator = financials[0] if isinstance(financials, list) else financials
+        
+        statement_types = ['income_statements', 'balance_sheets', 'cash_flow_statements']
+        
+        for key in statement_types:
+            # Get the list of reports for the specific type (e.g., income statements)
+            statements_list = aggregator.get(key, [])
+            
+            # Keep only past reports (relative to the end_date)
+            filtered = [
+                f for f in statements_list
+                if f.get('report_period') and f.get('report_period') <= end_date
+            ]
+            
+            if filtered:
+                selected_financials[key] = filtered 
+            else:
+                print(f"No data found for {key} before {end_date}")
+
+        return selected_financials
+
+
+    # return all financials if no end_date is specified
     return financials
+
+#%%
