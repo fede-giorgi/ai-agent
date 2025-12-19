@@ -4,18 +4,10 @@ This script defines an investment agent that analyzes stocks according to Warren
 from langchain.tools import tool
 from pydantic import BaseModel, Field
 from typing_extensions import Literal
-from models.financial_summary import FinancialSummary
+from models.financial_summary import FinancialSummary, WarrenBuffettSignal
 from llm import get_llm
 import math
 import json
-
-# --- Pydantic Models ---
-
-class WarrenBuffettSignal(BaseModel):
-    """The final output of the Warren Buffett agent."""
-    signal: Literal["bullish", "bearish", "neutral"] = Field(description="The investment signal for the stock.")
-    confidence: int = Field(description="The confidence level of the signal, from 0 to 100.")
-    reasoning: str = Field(description="A brief reasoning for the signal.")
 
 # --- Helper Functions ---
 
