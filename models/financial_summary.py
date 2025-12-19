@@ -83,7 +83,7 @@ class Result(BaseModel):
 
 class ResearchAgentOutput(BaseModel):
     agent: str = "research_agent"
-    period: str = "ttm"
+    period: str = "annual"
     requested_tickers: List[str]
     results: List[Result] = Field(default_factory=list)
     errors: List[Error] = Field(default_factory=list)
