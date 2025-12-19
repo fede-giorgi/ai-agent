@@ -8,7 +8,7 @@ def run_portfolio_manager_agent(
     risk_profile: int,
     warren_signals: Dict[str, Any],
     price_map: Dict[str, float]
-) -> dict:
+    ) -> dict:
     """
     Runs the Portfolio Manager Agent to propose trades based on signals and risk profile.
     """
