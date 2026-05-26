@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> BacktestReport:
     p.add_argument("--capital", type=float, default=config.INITIAL_CAPITAL)
     p.add_argument("--risk", type=int, default=config.RISK_PROFILE)
     p.add_argument("--max-iters", type=int, default=MAX_ITERATIONS)
+    p.add_argument("--screen-top", type=int, default=None,
+                   help="screen the universe to the top-K candidates (as-of window start) before analysis")
     p.add_argument("--rebuild-cache", action="store_true")
     # Ignore run-mode flags passed through from main.py (--dev/--demo).
     args, _unknown = p.parse_known_args(argv)
@@ -80,6 +82,15 @@ def main(argv: list[str] | None = None) -> BacktestReport:
 
     console.rule("[bold green]Agentic AI Hedge Fund — Walk-Forward Backtest[/bold green]")
     cache = PiTDataCache(universe, start, end).build(force=args.rebuild_cache, log=console.print)
+
+    # Optional: screen a large universe down to the top-K candidates (as-of the
+    # window start, fixed for the whole run — no survivorship bias or look-ahead).
+    if args.screen_top:
+        from .screening import screen_universe
+        full_n = len(universe)
+        universe = screen_universe(cache, universe, start, top_k=args.screen_top)
+        console.print(f"[dim]Screened {full_n} → {len(universe)}: {', '.join(universe)}[/dim]")
+
     harness = WalkForwardHarness(universe, start, end, capital=args.capital,
                                  risk_profile=args.risk, cache=cache,
                                  max_iterations=args.max_iters, log=console.print)
