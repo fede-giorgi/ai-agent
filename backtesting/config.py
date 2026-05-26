@@ -2,6 +2,10 @@
 
 import os
 
+from config import RISK_FREE_ANNUAL  # re-exported from the root config (risk-free benchmark)
+
+__all__ = ["RISK_FREE_ANNUAL"]
+
 # Where the downloaded full-window data is persisted (git-ignored).
 CACHE_DIR: str = os.getenv("BT_CACHE_DIR", ".bt_cache")
 
@@ -45,3 +49,20 @@ DEFAULT_LINE_ITEMS: list[str] = [
     "book_value_per_share",
     "operating_cash_flow",
 ]
+
+# ── Walk-forward harness ────────────────────────────────────────────────────
+INITIAL_CAPITAL: float = 100_000.0
+RISK_PROFILE: int = 6
+
+# Execution model
+FILL_TIMING: str = "next_open"   # "next_open" (clean, no look-ahead) | "close"
+SLIPPAGE_BPS: float = 0.0        # basis points applied against the fill
+FRACTIONAL_SHARES: bool = False  # match production (integer shares)
+
+# Day-level skip gate (deterministic, no LLM)
+GATE_PRICE_MOVE_PCT: float = 0.03        # re-run if any name moved ≥3% since last run
+GATE_MAX_DAYS_BETWEEN_RUNS: int = 5      # force a run at least weekly
+GATE_FORCE_FIRST_DAY: bool = True
+
+# Metrics
+TRADING_DAYS_PER_YEAR: int = 252
