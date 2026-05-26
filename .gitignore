@@ -17,3 +17,6 @@ venv/
 Thumbs.db
 
 financial_agent_session.txt
+
+# Backtesting point-in-time data cache (downloaded once, not source)
+.bt_cache/
