@@ -23,14 +23,21 @@ if os.getenv("LANGCHAIN_API_KEY"):
 
 _GOOGLE_DEFAULT = "gemini-3.1-pro-preview"
 _ANTHROPIC_DEFAULT = "claude-opus-4-6"
+# Bedrock cross-region inference-profile id. CONFIRM exact ids via:
+#   aws bedrock list-inference-profiles --region us-east-2
+_BEDROCK_DEFAULT = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
-# Approximate cost per 1M tokens (input / output) — update as pricing changes
+# Approximate cost per 1M tokens — update as pricing changes.
+# Claude rates are Amazon Bedrock (us-east-2); `cache_read` is the prompt-cache
+# hit rate for input tokens. Keys are matched against the model id by longest
+# substring, so Bedrock inference-profile ids (e.g.
+# "us.anthropic.claude-haiku-4-5-...-v1:0") resolve to the right family.
 _COST_PER_1M: dict[str, dict[str, float]] = {
-    "gemini-2.5-flash":           {"input": 0.075, "output": 0.30},
-    "gemini-3.1-pro-preview":     {"input": 1.25,  "output": 5.00},
-    "claude-opus-4-6":            {"input": 15.0,  "output": 75.0},
-    "claude-sonnet-4-6":          {"input": 3.0,   "output": 15.0},
-    "claude-haiku-4-5-20251001":  {"input": 0.80,  "output": 4.0},
+    "gemini-2.5-flash":       {"input": 0.075, "output": 0.30},
+    "gemini-3.1-pro-preview": {"input": 1.25,  "output": 5.00},
+    "claude-opus-4-7":        {"input": 5.50, "output": 27.50, "cache_read": 0.55},
+    "claude-sonnet-4-6":      {"input": 3.30, "output": 16.50, "cache_read": 0.33},
+    "claude-haiku-4-5":       {"input": 1.10, "output": 5.50,  "cache_read": 0.11},
 }
 
 
@@ -57,8 +64,14 @@ class _TokenUsageCallback(BaseCallbackHandler):
     def summary(self, model: str | None = None) -> dict:
         m = model or self._model
         cost = None
-        if m and m in _COST_PER_1M:
-            rates = _COST_PER_1M[m]
+        rates = _COST_PER_1M.get(m) if m else None
+        if rates is None and m:
+            # Bedrock profile ids are long (e.g. "us.anthropic.claude-haiku-4-5-...-v1:0");
+            # match the longest pricing key that is a substring of the model id.
+            candidates = [k for k in _COST_PER_1M if k in m]
+            if candidates:
+                rates = _COST_PER_1M[max(candidates, key=len)]
+        if rates is not None:
             cost = (
                 self._input_tokens  / 1_000_000 * rates["input"] +
                 self._output_tokens / 1_000_000 * rates["output"]
@@ -118,6 +131,29 @@ def get_llm(provider: str | None = None, model: str | None = None):
         return ChatAnthropic(model=resolved_model, temperature=0, max_retries=2,
                              callbacks=[_tracker])
 
+    if provider == "bedrock":
+        try:
+            from langchain_aws import ChatBedrockConverse
+        except ImportError as exc:
+            raise ImportError(
+                "langchain-aws is required for Amazon Bedrock support. "
+                "Install it with: pip install langchain-aws boto3"
+            ) from exc
+        resolved_model = model or _BEDROCK_DEFAULT
+        region = os.getenv("BEDROCK_REGION") or os.getenv("AWS_REGION", "us-east-2")
+        max_tokens = int(os.getenv("BEDROCK_MAX_TOKENS", "8192"))
+        _tracker._model = resolved_model
+        # Native Converse tool-calling + with_structured_output work for Claude.
+        # Reasoning is OFF by default (opt-in via additional_model_request_fields) — keep it
+        # off to control output-token cost.
+        return ChatBedrockConverse(
+            model=resolved_model,
+            region_name=region,
+            temperature=0,
+            max_tokens=max_tokens,
+            callbacks=[_tracker],
+        )
+
     resolved_model = model or _GOOGLE_DEFAULT
     _tracker._model = resolved_model
     return ChatGoogleGenerativeAI(
@@ -128,3 +164,18 @@ def get_llm(provider: str | None = None, model: str | None = None):
         max_retries=2,
         callbacks=[_tracker],
     )
+
+
+def get_judge_llm():
+    """LLM for quality-critical, low-volume calls (Warren Buffett signal, Final Orchestrator).
+
+    On Amazon Bedrock this returns the Sonnet "judge" tier (``config.JUDGE_MODEL``).
+    On other providers there is no separate tier, so it falls back to the standard
+    provider default. High-volume "workhorse" agents simply call ``get_llm()``, which
+    on Bedrock defaults to Haiku (``_BEDROCK_DEFAULT``) — so leave ``LLM_MODEL`` unset
+    on Bedrock to keep the tiers distinct.
+    """
+    if os.getenv("LLM_PROVIDER", "google") == "bedrock":
+        from config import JUDGE_MODEL
+        return get_llm("bedrock", JUDGE_MODEL)
+    return get_llm()
