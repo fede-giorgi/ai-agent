@@ -7,7 +7,7 @@ from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from classes.financial_summary import FinancialSummary, WarrenBuffettSignal
-from llm import get_llm
+from llm import get_judge_llm
 from tools.analyze_book_value_growth import analyze_book_value_growth
 from tools.analyze_consistency import analyze_consistency
 from tools.analyze_fundamentals import analyze_fundamentals
@@ -86,7 +86,7 @@ async def warren_buffett_agent(
     """
     _console.print(f"[bold yellow]Analyzing {summary.ticker} with Warren Buffett agent...[/bold yellow]")
 
-    llm = get_llm()
+    llm = get_judge_llm()
 
     # ── No-arg closures — each calls the @tool function from tools/ ───────────
 
