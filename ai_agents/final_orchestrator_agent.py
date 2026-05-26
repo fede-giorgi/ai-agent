@@ -8,7 +8,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from llm import get_llm
+from llm import get_judge_llm
 
 
 def _text(content) -> str:
@@ -43,7 +43,7 @@ def run_final_orchestrator_agent(
         dict with ``agent``, ``final_decision_reasoning``, ``final_trades``,
         ``expected_portfolio``, and ``expected_capital``.
     """
-    llm = get_llm()
+    llm = get_judge_llm()
     
     system_message = SystemMessage(
         content="""You are FinalOrchestratorAgent — the Chief Investment Officer of a Warren Buffett-style hedge fund.
