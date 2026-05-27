@@ -9,3 +9,4 @@ boto3
 langsmith==0.7.0
 pydantic==2.12.5
 rich==14.3.2
+matplotlib
