@@ -815,7 +815,7 @@ def main():
     from ai_agents.final_orchestrator_agent import run_final_orchestrator_agent, generate_ascii_chart
     from ai_agents.monitor import run_monitor_agent
     from tools.get_stock_prices import get_stock_prices
-    from llm import get_llm
+    from llm import get_llm, format_usage_line
 
     console.print(Panel("[bold]Starting Financial Analysis[/bold]",
                         box=box.ROUNDED, border_style="green", expand=False, padding=(0, 2)))
@@ -945,6 +945,7 @@ def main():
             }
             history.append(iteration_data)
             progress.advance(task)
+            console.print(f"[dim]  running: {format_usage_line(llm_model)}[/dim]")
 
             # Deterministic early stop: stable proposals + clean monitor + settled challenge.
             if has_converged(history):

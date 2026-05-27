@@ -26,6 +26,7 @@ class WalkForwardHarness:
                  cache: PiTDataCache | None = None,
                  max_iterations: int = MAX_ITERATIONS,
                  initial_portfolio: dict | None = None,
+                 max_sessions: int | None = None,
                  log=print):
         self.universe = sorted(set(universe))
         self.start = start
@@ -35,12 +36,15 @@ class WalkForwardHarness:
         self.cache = cache
         self.max_iterations = max_iterations
         self.initial_portfolio = dict(initial_portfolio or {})
+        self.max_sessions = max_sessions   # cap sessions (smoke/debug runs)
         self.log = log
 
     def run(self) -> BacktestReport:
         cache = self.cache or PiTDataCache(self.universe, self.start, self.end).build(log=self.log)
         cal = TradingCalendar(cache)
         sessions = cal.sessions(self.start, self.end)
+        if self.max_sessions:
+            sessions = sessions[:self.max_sessions]
         if not sessions:
             raise ValueError(f"No trading sessions in {self.start}..{self.end} — check the cache window.")
 
@@ -71,7 +75,14 @@ class WalkForwardHarness:
                                          trades=fills, portfolio=dict(portfolio), cash=cash,
                                          equity=equity, iterations=iters))
             tag = "RUN " if run_today else "SKIP"
-            self.log(f"[{d}] {tag} ({reason})  equity=${equity:,.2f}  trades={len(fills)}  iters={iters}")
+            cost = ""
+            if run_today:
+                try:
+                    from llm import format_usage_line
+                    cost = f"  | {format_usage_line()}"
+                except Exception:  # noqa: BLE001
+                    pass
+            self.log(f"[{d}] {tag} ({reason})  equity=${equity:,.2f}  trades={len(fills)}  iters={iters}{cost}")
 
         report = BacktestReport(
             agent_curve=agent_curve,

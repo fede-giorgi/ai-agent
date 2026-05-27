@@ -95,6 +95,15 @@ def get_usage_summary(model: str | None = None) -> dict:
     return _tracker.summary(model)
 
 
+def format_usage_line(model: str | None = None) -> str:
+    """One-line running token/cost view for live progress display."""
+    u = _tracker.summary(model)
+    cost = u["estimated_cost_usd"]
+    cost_s = f"~${cost:.4f}" if cost is not None else "cost n/a"
+    return (f"{u['input_tokens']:,} in / {u['output_tokens']:,} out tok | "
+            f"{u['calls']} calls | {cost_s}")
+
+
 def get_llm(provider: str | None = None, model: str | None = None):
     """
     Returns an LLM instance for the requested provider and model.

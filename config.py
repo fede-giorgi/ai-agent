@@ -29,8 +29,8 @@ BEDROCK_REGION: str = "us-east-2"
 WORKHORSE_MODEL: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 # Quality-critical, low-volume: Warren Buffett signal + Final Orchestrator.
-# TODO: confirm the exact Sonnet 4.6 date stamp via list-inference-profiles.
-JUDGE_MODEL: str = "us.anthropic.claude-sonnet-4-6-20250929-v1:0"
+# (Confirmed via `aws bedrock list-inference-profiles` — Sonnet 4.6 has no date/version suffix.)
+JUDGE_MODEL: str = "us.anthropic.claude-sonnet-4-6"
 
 # ── Debate loop: deterministic convergence stopping ─────────────────────────
 # Replaces the fixed iteration count. The loop stops early once the Portfolio
