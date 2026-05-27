@@ -58,6 +58,11 @@ def _render(report: BacktestReport) -> None:
     ran = sum(1 for d in report.day_results if d.ran_pipeline)
     console.print(f"[dim]{ran}/{len(report.day_results)} sessions ran the full pipeline "
                   f"(skip-gate saved {len(report.day_results) - ran}).[/dim]")
+    try:
+        from llm import format_usage_line
+        console.print(f"[dim]tokens/cost: {format_usage_line()}[/dim]")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def main(argv: list[str] | None = None) -> BacktestReport:
@@ -71,6 +76,10 @@ def main(argv: list[str] | None = None) -> BacktestReport:
     p.add_argument("--max-iters", type=int, default=MAX_ITERATIONS)
     p.add_argument("--screen-top", type=int, default=None,
                    help="screen the universe to the top-K candidates (as-of window start) before analysis")
+    p.add_argument("--debug", action="store_true",
+                   help="smoke test: first ticker only, first 2 sessions — verify it runs before a full backtest")
+    p.add_argument("--no-plot", dest="plot", action="store_false", help="skip the equity-curve PNG")
+    p.set_defaults(plot=True)
     p.add_argument("--rebuild-cache", action="store_true")
     # Ignore run-mode flags passed through from main.py (--dev/--demo).
     args, _unknown = p.parse_known_args(argv)
@@ -79,6 +88,13 @@ def main(argv: list[str] | None = None) -> BacktestReport:
     start = args.start or (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=95)).strftime("%Y-%m-%d")
     universe = ([t.strip().upper() for t in args.tickers.split(",") if t.strip()]
                 if args.tickers else list(DEFAULT_TICKERS))
+
+    max_sessions = None
+    if args.debug:
+        universe = universe[:1]
+        max_sessions = 2
+        console.print("[bold yellow]DEBUG SMOKE TEST[/bold yellow] [dim]— 1 ticker, 2 sessions "
+                      "(verifies the pipeline before a full backtest)[/dim]")
 
     console.rule("[bold green]Agentic AI Hedge Fund — Walk-Forward Backtest[/bold green]")
     cache = PiTDataCache(universe, start, end).build(force=args.rebuild_cache, log=console.print)
@@ -93,9 +109,22 @@ def main(argv: list[str] | None = None) -> BacktestReport:
 
     harness = WalkForwardHarness(universe, start, end, capital=args.capital,
                                  risk_profile=args.risk, cache=cache,
-                                 max_iterations=args.max_iters, log=console.print)
+                                 max_iterations=args.max_iters, max_sessions=max_sessions,
+                                 log=console.print)
     report = harness.run()
     _render(report)
+
+    # Terminal sparkline + PNG of equity / outperformance.
+    from .plots import ascii_sparkline, save_report_chart
+    spark = ascii_sparkline([e for _, e in report.agent_curve])
+    if spark:
+        console.print(f"[dim]agent equity:[/dim] {spark}")
+    if args.plot:
+        path = save_report_chart(report)
+        if path:
+            console.print(f"[green]Chart saved → {path}[/green]")
+        else:
+            console.print("[dim](chart skipped — matplotlib unavailable or curve too short)[/dim]")
     return report
 
 
