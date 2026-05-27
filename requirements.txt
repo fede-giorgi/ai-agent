@@ -4,9 +4,22 @@ langchain==1.2.9
 langchain-core==1.2.17
 langchain-google-genai==4.2.0
 langchain-anthropic==1.3.4
-langchain-aws
-boto3
+langchain-aws==1.4.1
+
+# langgraph stack (transitive via langchain 1.x) — pin the whole family.
+# langgraph is capped at 1.0.10; langgraph-prebuilt must stay <=1.0.8 because
+# newer prebuilt (1.0.9+) imports `ExecutionInfo` from langgraph.runtime, which
+# does not exist in langgraph 1.0.10 — leaving it unpinned breaks a fresh install.
+langgraph==1.0.10
+langgraph-prebuilt==1.0.8
+langgraph-checkpoint==4.1.1
+langgraph-sdk==0.3.15
+
+boto3==1.43.15
 langsmith==0.7.0
 pydantic==2.12.5
 rich==14.3.2
-matplotlib
+matplotlib==3.10.9
+
+# tests
+pytest==9.0.3
