@@ -27,6 +27,7 @@ class WalkForwardHarness:
                  max_iterations: int = MAX_ITERATIONS,
                  initial_portfolio: dict | None = None,
                  max_sessions: int | None = None,
+                 verbose: bool = False,
                  log=print):
         self.universe = sorted(set(universe))
         self.start = start
@@ -37,6 +38,7 @@ class WalkForwardHarness:
         self.max_iterations = max_iterations
         self.initial_portfolio = dict(initial_portfolio or {})
         self.max_sessions = max_sessions   # cap sessions (smoke/debug runs)
+        self.verbose = verbose             # render per-day signals + debate + reasoning
         self.log = log
 
     def run(self) -> BacktestReport:
@@ -65,7 +67,8 @@ class WalkForwardHarness:
             iters = 0
             if run_today:
                 out = run_one_day(d, self.universe, portfolio, cash, self.risk_profile,
-                                  cache, max_iterations=self.max_iterations, log=self.log)
+                                  cache, max_iterations=self.max_iterations,
+                                  verbose=self.verbose, log=self.log)
                 portfolio, cash, fills = engine.apply(out["final_trades"], portfolio, cash, d)
                 iters = out["iterations"]
                 snapshot = build_snapshot(d, cache, self.universe)

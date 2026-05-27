@@ -144,7 +144,7 @@ def test_walk_forward_loop_with_stub_decision(monkeypatch):
 
     calls = {"n": 0}
 
-    def stub_run_one_day(cutoff, universe, portfolio, cash, risk, cache, *, max_iterations, log):
+    def stub_run_one_day(cutoff, universe, portfolio, cash, risk, cache, *, max_iterations, log, verbose=False):
         calls["n"] += 1
         trades = [{"action": "buy", "ticker": "AAPL", "shares": 5}] if calls["n"] == 1 else []
         return {"final_trades": trades, "price_map": {}, "signals": {}, "iterations": 2}
