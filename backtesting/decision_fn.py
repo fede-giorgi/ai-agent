@@ -104,12 +104,15 @@ def _trades_str(trades: list[dict] | None) -> str:
 def _render_day(cutoff: str, signals: dict, history: list[dict], final: dict,
                 console=None) -> None:
     """Print the full per-day agent narrative — signals, the complete PM → Monitor
-    → What-If debate (every agent's full text, no truncation), and the Orchestrator's
-    decision — so a run can be read end-to-end and judged for sound reasoning.
-
-    ``console`` defaults to the shared Rich console; tests pass a recording one.
+    → What-If debate, and the Orchestrator's decision — laid out so it reads
+    end-to-end and the reasoning can be judged: each iteration's outcome is a
+    skimmable one-line header, the prose is dimmed below it, and a What-If round
+    that just repeats the previous one collapses to a single line. Nothing is
+    truncated. ``console`` defaults to the shared Rich console; tests pass a
+    recording one.
     """
     from rich import box
+    from rich.markup import escape
     from rich.panel import Panel
     from rich.table import Table
 
@@ -132,25 +135,41 @@ def _render_day(cutoff: str, signals: dict, history: list[dict], final: dict,
     for tk, s in (signals or {}).items():
         why = (s.get("reasoning") or "").strip()
         if why:
-            console.print(Panel(why, title=f"{tk} — Buffett reasoning", title_align="left",
-                                border_style="cyan", padding=(0, 1)))
+            console.print(Panel(escape(why), title=f"{escape(tk)} — Buffett reasoning",
+                                title_align="left", border_style="cyan", padding=(0, 1)))
 
-    # The PM → Monitor → What-If debate, round by round — full text, no truncation.
+    # The PM → Monitor → What-If debate, round by round.
     console.rule("[bold]Debate — Portfolio Manager → Monitor → What-If[/bold]", style="dim")
+    prev = None
     for h in history:
-        _render_iteration(console, h)
+        _render_iteration(console, h, prev)
+        prev = h
 
     # The Final Orchestrator's decision + full reasoning.
     reasoning = final.get("final_decision_reasoning") or final.get("reasoning") or "(none)"
-    console.print(Panel(str(reasoning), title="Final decision", border_style="green",
+    console.print(Panel(escape(str(reasoning)), title="Final decision", border_style="green",
                         title_align="left", padding=(0, 1)))
-    console.print(f"[bold]Final trades:[/bold] {_trades_str(final.get('final_trades', []))}")
+    final_trades = _trades_str(final.get("final_trades", []))
+    console.print(f"[bold green]▸ {escape(cutoff)} decision:[/bold green] "
+                  f"[bold]{escape(final_trades)}[/bold]  "
+                  f"[dim]({len(history)} debate iteration{'s' if len(history) != 1 else ''})[/dim]")
 
 
-def _render_iteration(console, h: dict) -> None:
-    """Render one debate round as a labelled panel: what the PM proposed and why,
-    what the Monitor found (with concrete violations), and the What-If challenge
-    (full critique + the alternative it puts forward). Nothing truncated."""
+def _wi_signature(wi: dict) -> tuple:
+    """Identity of a What-If challenge (critique + alternative) — used to detect a
+    round that merely repeats the previous one so it can be collapsed."""
+    alt = wi.get("alternative_scenario") or {}
+    alt_trades = alt.get("proposed_trades", []) if isinstance(alt, dict) else []
+    return ((wi.get("critique") or "").strip(),
+            tuple((t.get("action"), t.get("ticker"), t.get("shares"))
+                  for t in alt_trades if isinstance(t, dict)))
+
+
+def _render_iteration(console, h: dict, prev_h: dict | None = None) -> None:
+    """Render one debate round: a one-line outcome header (PM action · Monitor
+    verdict · What-If stance) plus the agents' full reasoning, dimmed. A What-If
+    that repeats the prior round collapses to a single line."""
+    from rich.markup import escape
     from rich.panel import Panel
     from rich.table import Table
 
@@ -159,41 +178,59 @@ def _render_iteration(console, h: dict) -> None:
     mon = h.get("monitor_check") or {}
     wi = h.get("what_if_critique") or {}
 
-    # Portfolio Manager: trades + per-trade rationale notes.
-    pm_lines = [f"[bold]proposes:[/bold] {_trades_str(pm.get('proposed_trades') or [])}"]
-    pm_lines += [f"  • {n}" for n in (pm.get("notes") or [])]
-
-    # Monitor: validity + the concrete constraint violations / cash summary.
-    if mon.get("is_valid"):
-        mon_lines = ["[green]VALID[/green] — no constraint violations"]
-    else:
-        mon_lines = ["[red]VIOLATIONS[/red]"]
-        mon_lines += [f"  ✗ [red]{v.get('type')}[/red] {v.get('ticker')}: {v.get('detail')}"
-                      for v in (mon.get("violations") or [])]
-    mon_lines += [f"  • {n}" for n in (mon.get("notes") or [])]
-
-    # What-If: full critique + the concrete alternative + its reasoning.
-    wi_lines: list[str] = []
+    pm_action = _trades_str(pm.get("proposed_trades") or [])
+    mon_ok = bool(mon.get("is_valid"))
     crit = (wi.get("critique") or "").strip()
-    if crit:
-        wi_lines.append(crit)
-        alt = wi.get("alternative_scenario") or {}
-        if isinstance(alt, dict):
-            if alt.get("description"):
-                wi_lines.append(f"[magenta]alternative:[/magenta] {alt['description']}")
-            if alt.get("proposed_trades"):
-                wi_lines.append(f"[magenta]proposes:[/magenta] {_trades_str(alt['proposed_trades'])}")
-        why = (wi.get("reasoning") or "").strip()
-        if why and why != crit:
-            wi_lines.append(f"[dim]why:[/dim] {why}")
+    alt = wi.get("alternative_scenario") or {}
+    alt_trades = alt.get("proposed_trades", []) if isinstance(alt, dict) else []
+    unchanged = bool(prev_h) and crit and _wi_signature(wi) == _wi_signature(
+        prev_h.get("what_if_critique") or {})
+
+    if not crit:
+        wi_head = "endorses (no challenge)"
+    elif alt_trades:
+        wi_head = f"proposes {_trades_str(alt_trades)}"
     else:
-        wi_lines.append("[dim](no challenge — PM proposal accepted, or final iteration)[/dim]")
+        wi_head = "challenges, suggests holding"
+
+    # Skimmable one-line outcome in the panel header.
+    title = (f"Iteration {i}   PM [bold]{escape(pm_action)}[/bold]   "
+             f"Monitor {'[green]valid[/green]' if mon_ok else '[red]BLOCKED[/red]'}   "
+             f"What-If [magenta]{escape(wi_head)}[/magenta]"
+             + ("  [dim](unchanged)[/dim]" if unchanged else ""))
 
     grid = Table.grid(padding=(0, 2))
     grid.add_column(justify="right", style="bold", no_wrap=True)
     grid.add_column(overflow="fold")
-    grid.add_row("[green]Portfolio Mgr[/green]", "\n".join(pm_lines))
-    grid.add_row("[blue]Monitor[/blue]", "\n".join(mon_lines))
-    grid.add_row("[magenta]What-If[/magenta]", "\n".join(wi_lines))
-    console.print(Panel(grid, title=f"Iteration {i}", title_align="left",
-                        border_style="dim", padding=(0, 1)))
+
+    # PM rationale (dimmed prose).
+    pm_cell = "\n".join(f"[dim]• {escape(n)}[/dim]" for n in (pm.get("notes") or [])) or "[dim]—[/dim]"
+    grid.add_row("[green]Portfolio Mgr[/green]", pm_cell)
+
+    # Monitor: only elaborate when it blocked something.
+    if mon_ok:
+        mon_cell = "[dim]all constraints satisfied[/dim]"
+    else:
+        mon_cell = "\n".join(
+            f"[red]✗ {escape(str(v.get('type')))}[/red] "
+            f"[dim]{escape(str(v.get('ticker')))}: {escape(str(v.get('detail')))}[/dim]"
+            for v in (mon.get("violations") or [])) or "[red]✗ blocked[/red]"
+    grid.add_row("[blue]Monitor[/blue]", mon_cell)
+
+    # What-If: collapse a repeat round; else full critique + alternative + why.
+    if not crit:
+        wi_cell = "[dim]no challenge raised[/dim]"
+    elif unchanged:
+        wi_cell = ("[dim]same challenge as the previous round — a standing "
+                   "disagreement left for the Orchestrator to settle[/dim]")
+    else:
+        parts = [f"[dim]{escape(crit)}[/dim]"]
+        if isinstance(alt, dict) and alt.get("description"):
+            parts.append(f"[magenta]alternative:[/magenta] [dim]{escape(alt['description'])}[/dim]")
+        why = (wi.get("reasoning") or "").strip()
+        if why and why != crit:
+            parts.append(f"[dim italic]why: {escape(why)}[/dim italic]")
+        wi_cell = "\n".join(parts)
+    grid.add_row("[magenta]What-If[/magenta]", wi_cell)
+
+    console.print(Panel(grid, title=title, title_align="left", border_style="dim", padding=(0, 1)))
