@@ -65,5 +65,34 @@ def test_structure_labels_present():
     for label in ("Portfolio Mgr", "Monitor", "What-If", "Final decision"):
         assert label in out
     assert "NoShort" in out          # Monitor violation type surfaced
-    assert "VIOLATIONS" in out       # invalid round flagged
+    assert "BLOCKED" in out          # invalid round flagged in the header
     assert "JNJ" in out              # What-If alternative trade shown
+
+
+def test_repeat_whatif_round_collapses():
+    """A What-If round identical to the previous one is shown once in full, then
+    collapsed — so non-converging debates don't repeat the same wall of text."""
+    from rich.console import Console
+
+    wi = {
+        "critique": _LEAD + "SENTINEL_REPEAT",
+        "alternative_scenario": {"description": "Buy JNJ",
+                                 "proposed_trades": [{"action": "buy", "ticker": "JNJ", "shares": 10}]},
+        "reasoning": "Deploy into the bullish name.",
+    }
+    round_ = {
+        "pm_proposal": {"proposed_trades": [], "notes": ["hold"]},
+        "monitor_check": {"is_valid": True, "violations": [], "notes": []},
+        "what_if_critique": wi,
+    }
+    history = [dict(round_, iteration=1), dict(round_, iteration=2)]
+    signals = {"AAPL": {"signal": "neutral", "confidence": 45, "reasoning": "x"}}
+    final = {"final_decision_reasoning": "hold", "final_trades": []}
+
+    console = Console(record=True, width=100, force_terminal=False)
+    _render_day("2026-03-10", signals, history, final, console=console)
+    out = console.export_text()
+
+    assert out.count("SENTINEL_REPEAT") == 1          # full critique shown only once
+    assert "same challenge as the previous round" in out
+    assert "(unchanged)" in out
