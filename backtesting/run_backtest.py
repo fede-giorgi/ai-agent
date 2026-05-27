@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from datetime import datetime, timedelta
 
 from rich import box
@@ -83,11 +84,34 @@ def main(argv: list[str] | None = None) -> BacktestReport:
                    help="render each RUN day's signals table, PM/Monitor/What-If debate, and Orchestrator reasoning")
     p.add_argument("--out-dir", default="outputs",
                    help="folder for charts/outputs (created if missing; git-ignored)")
+    p.add_argument("--display", choices=["auto", "mac", "ec2"], default="auto",
+                   help="output style: mac=colour for live watching; ec2=plain code-free fixed-width "
+                        "logs that read correctly anywhere; auto=detect by terminal")
+    p.add_argument("--max-cost", type=float, default=None,
+                   help="hard $ cap — stop the run (still saving a partial report/chart) once the "
+                        "estimated cost exceeds this")
     p.add_argument("--no-plot", dest="plot", action="store_false", help="skip the equity-curve PNG")
     p.set_defaults(plot=True)
     p.add_argument("--rebuild-cache", action="store_true")
     # Ignore run-mode flags passed through from main.py (--dev/--demo).
     args, _unknown = p.parse_known_args(argv)
+
+    # ── Display mode ────────────────────────────────────────────────────────
+    # mac: force colour (shows even when piped to `tee`), for live watching.
+    # ec2: no colour + fixed width → clean, escape-code-free logs that display
+    #      correctly with cat/less/VSCode at any window size. Set BEFORE any Rich
+    #      Console is built (agents/render build theirs lazily, after this point).
+    display = args.display
+    if display == "auto":
+        display = "mac" if sys.stdout.isatty() else "ec2"
+    if display == "ec2":
+        os.environ["NO_COLOR"] = "1"
+        os.environ.setdefault("COLUMNS", "120")
+    else:
+        os.environ["FORCE_COLOR"] = "1"
+        os.environ.setdefault("COLUMNS", "160")
+    global console
+    console = Console()   # rebuild to honour the colour/width env just set
 
     end = args.end or datetime.today().strftime("%Y-%m-%d")
     start = args.start or (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=95)).strftime("%Y-%m-%d")
@@ -116,6 +140,7 @@ def main(argv: list[str] | None = None) -> BacktestReport:
                                  risk_profile=args.risk, cache=cache,
                                  max_iterations=args.max_iters, max_sessions=max_sessions,
                                  verbose=(args.verbose or args.debug),  # smoke is verbose by default
+                                 max_cost=args.max_cost,
                                  log=console.print)
     report = harness.run()
     _render(report)

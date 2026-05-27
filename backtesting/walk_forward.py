@@ -27,6 +27,7 @@ class WalkForwardHarness:
                  max_iterations: int = MAX_ITERATIONS,
                  initial_portfolio: dict | None = None,
                  max_sessions: int | None = None,
+                 max_cost: float | None = None,
                  verbose: bool = False,
                  log=print):
         self.universe = sorted(set(universe))
@@ -38,6 +39,7 @@ class WalkForwardHarness:
         self.max_iterations = max_iterations
         self.initial_portfolio = dict(initial_portfolio or {})
         self.max_sessions = max_sessions   # cap sessions (smoke/debug runs)
+        self.max_cost = max_cost           # hard $ cap — stop early once exceeded
         self.verbose = verbose             # render per-day signals + debate + reasoning
         self.log = log
 
@@ -87,6 +89,20 @@ class WalkForwardHarness:
                     except Exception:  # noqa: BLE001
                         pass
                 self.log(f"[{d}] {tag} ({reason})  equity=${equity:,.2f}  trades={len(fills)}  iters={iters}{cost}")
+
+                # Hard $ cap: stop after a completed session (so the day is fully
+                # recorded) once the estimated spend crosses the budget. The
+                # partial-report path below still saves a report + chart.
+                if run_today and self.max_cost:
+                    try:
+                        from llm import get_usage_summary
+                        spent = get_usage_summary().get("estimated_cost_usd")
+                        if spent is not None and spent >= self.max_cost:
+                            self.log(f"[cost cap] estimated ${spent:.2f} ≥ "
+                                     f"${self.max_cost:.2f} — stopping early.")
+                            break
+                    except Exception:  # noqa: BLE001
+                        pass
         except KeyboardInterrupt:
             # Ctrl-C / kill: still produce a report + chart for the days completed so far.
             self.log("\n[interrupted] building a partial report from the completed sessions...")
