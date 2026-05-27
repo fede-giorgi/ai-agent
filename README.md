@@ -220,6 +220,89 @@ LLM_PROVIDER=anthropic LLM_MODEL=claude-opus-4-6 python main.py --debug
 
 ---
 
+## 🧪 Walk-Forward Backtest & EC2 Cheat-Sheet
+
+The heavy, trustworthy evaluation is the **walk-forward (no-refit) backtest**: it rolls day-by-day over a window, serves every agent from a point-in-time cache (no look-ahead), executes at the next open, and scores the agent against 1/N equal-weight, SPY, and the risk-free rate.
+
+```bash
+python -m backtesting.run_backtest \
+  --tickers MSFT,AAPL,NVDA,GOOGL,META --start 2026-03-01 --end 2026-03-31 \
+  --display ec2 --max-cost 12
+```
+
+### Flags
+
+| Flag | Meaning |
+|------|---------|
+| `--start` / `--end` | `YYYY-MM-DD` window (default: end = today, start = ~95 days before) |
+| `--tickers` | comma-separated; default = `config.DEFAULT_TICKERS` |
+| `--capital` / `--risk` | starting cash / risk profile 1–10 |
+| `--max-iters` | debate-loop hard cap (default `config.MAX_ITERATIONS`) |
+| `--screen-top K` | screen a large universe down to the top-K candidates (as-of window start) before analysis |
+| `--display {auto,mac,ec2}` | output style — see below (default `auto`) |
+| `--max-cost N` | hard `$` budget cap; stops cleanly after the day that crosses it, still saving report + chart |
+| `--debug` | smoke test: 1 ticker, 2 sessions — verify it runs before a real backtest |
+| `--verbose` | render each RUN day's signals table, PM/Monitor/What-If debate, and Orchestrator reasoning |
+| `--no-plot` / `--rebuild-cache` | skip the PNG / force re-download of the point-in-time cache |
+
+A chart is written to `outputs/backtest_<start>_to_<end>.png`.
+
+### Display modes
+
+Rich disables colour when output isn't a TTY (e.g. piped to `tee`), and bakes table width to the terminal it ran in — which is why an EC2 log can look garbled later on a Mac. The two explicit modes fix this:
+
+- **`mac`** → forces colour (survives `| tee`) + wide width. For watching live.
+- **`ec2`** → no colour + fixed 120-col width → plain, escape-code-free logs that read correctly via `cat` / `less` / VS Code at any window size. **Use this when you'll read the log later on another machine.**
+- **`auto`** (default) → picks `mac` if attached to a terminal, else `ec2`.
+
+> ⚠️ Inside `tmux` the terminal *is* a TTY, so `auto` would pick `mac` and bake colour codes into a file you `tee`. Pass `--display ec2` **explicitly** for logs you'll read elsewhere.
+
+### Running on EC2 (detached, lid-closed)
+
+`tmux` runs **on the EC2** — your SSH session (browser console *or* Mac terminal) is just a window into it. Detaching tmux **and** disconnecting SSH both leave the job running; only `tmux kill-session` or stopping the instance ends it. The one rule: **always start long jobs inside tmux** (a bare command dies when the connection drops).
+
+**Connect from your Mac terminal** (replace placeholders; `chmod 600` the key once):
+```bash
+chmod 600 <path/to/key.pem>
+ssh -i <path/to/key.pem> ec2-user@<EC2_PUBLIC_IP>      # region: us-east-2
+```
+Optional `~/.ssh/config` alias so you can just type `ssh hedge`:
+```
+Host hedge
+    HostName <EC2_PUBLIC_IP>
+    User ec2-user
+    IdentityFile <path/to/key.pem>
+```
+> The public IP changes if you stop & start the instance — update `HostName` or attach an Elastic IP to pin it.
+
+**On the EC2** (after `ssh hedge`):
+```bash
+cd ~/AI-Agent-Driven-Hedge-Fund && git pull
+tmux new -s bt -d \
+ "cd ~/AI-Agent-Driven-Hedge-Fund && source .venv/bin/activate && \
+  python -m backtesting.run_backtest \
+    --tickers MSFT,AAPL,NVDA,GOOGL,META --start 2026-03-01 --end 2026-03-31 \
+    --display ec2 --max-cost 12 2>&1 | tee ~/run.log"
+
+tmux ls                  # is a session alive?
+tmux attach -t bt        # watch live → detach with Ctrl-b then d (NOT Ctrl-d)
+pgrep -af run_backtest   # is the python process running?
+tmux kill-session -t bt  # stop the job now
+
+less ~/run.log           # read the finished log WITH scrolling (Space/b · g/G · /search · q)
+tail -f ~/run.log        # follow a RUNNING job (Ctrl-C stops following, NOT the job)
+```
+
+**On your Mac** (pull results down, read locally):
+```bash
+scp hedge:'~/run.log' ~/Downloads/
+scp hedge:'~/AI-Agent-Driven-Hedge-Fund/outputs/*.png' ~/Downloads/
+less ~/Downloads/run.log          # clean (ec2 mode) — full scrolling, no escape-code garbage
+ssh hedge 'tail -f ~/run.log'     # peek at the live job from anywhere; Ctrl-C ends the follow only
+```
+
+---
+
 ## 👥 Contributors
 
 | Name | Role |
