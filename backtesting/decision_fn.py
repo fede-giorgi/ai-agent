@@ -20,8 +20,11 @@ from .tool_injection import install_cache
 
 async def _warren_all(financial_data: dict) -> dict:
     from ai_agents.warren_buffet_agent import warren_buffett_agent
+    from async_utils import bounded_gather
+    from config import MAX_ANALYST_CONCURRENCY
     tasks = [warren_buffett_agent(s, debug_mode=False) for s in financial_data.values()]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await bounded_gather(*tasks, limit=MAX_ANALYST_CONCURRENCY,
+                                   return_exceptions=True)
     signals: dict = {}
     for ticker, res in zip(financial_data.keys(), results):
         if isinstance(res, Exception):
