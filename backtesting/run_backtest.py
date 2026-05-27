@@ -78,6 +78,8 @@ def main(argv: list[str] | None = None) -> BacktestReport:
                    help="screen the universe to the top-K candidates (as-of window start) before analysis")
     p.add_argument("--debug", action="store_true",
                    help="smoke test: first ticker only, first 2 sessions — verify it runs before a full backtest")
+    p.add_argument("--verbose", action="store_true",
+                   help="render each RUN day's signals table, PM/Monitor/What-If debate, and Orchestrator reasoning")
     p.add_argument("--no-plot", dest="plot", action="store_false", help="skip the equity-curve PNG")
     p.set_defaults(plot=True)
     p.add_argument("--rebuild-cache", action="store_true")
@@ -110,6 +112,7 @@ def main(argv: list[str] | None = None) -> BacktestReport:
     harness = WalkForwardHarness(universe, start, end, capital=args.capital,
                                  risk_profile=args.risk, cache=cache,
                                  max_iterations=args.max_iters, max_sessions=max_sessions,
+                                 verbose=(args.verbose or args.debug),  # smoke is verbose by default
                                  log=console.print)
     report = harness.run()
     _render(report)
