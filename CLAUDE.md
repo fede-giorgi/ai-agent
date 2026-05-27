@@ -27,8 +27,8 @@ pip install -r requirements.txt
 
 Pipeline is strictly sequential; each stage's output feeds the next (`main()` in `main.py`):
 
-1. **Research Agent** (`ai_agents/research_agent.py`) — async, per ticker; `bind_tools` over the 8 FinancialDatasets tools; structures results into a `FinancialSummary`.
-2. **Warren Buffett Agent** (`ai_agents/warren_buffet_agent.py`) — runs 8 analysis tools, emits a `WarrenBuffettSignal` (bullish/bearish/neutral + confidence 0–100).
+1. **Research Agent** (`ai_agents/research_agent.py` + `research_data.py`) — async, per ticker, **deterministic (no LLM)**: fetches the 8 endpoints (live, or cache-served and cutoff-masked in backtest) and maps them into a `FinancialSummary`. (Was an LLM tool-loop; that was pure plumbing and is now plain Python.)
+2. **Warren Buffett Agent** (`ai_agents/warren_buffet_agent.py`) — runs the 8 analyzers **deterministically in Python** (`run_analyses`), then **one** judge-tier (Sonnet) synthesis call → `WarrenBuffettSignal` (bullish/bearish/neutral + confidence 0–100). This is the only per-stock LLM call.
 3. **Trading debate loop** (`main.py`, ~`main.py:872`): per iteration runs **Portfolio Manager** (`portfolio_and_risk_manager.py`) → **Monitor** (`monitor.py`, deterministic `validate_trades`) → **What-If** (`what_if_agent.py`); appends to a `history` list.
 4. **Final Orchestrator** (`final_orchestrator_agent.py`) — reviews `history` + signals, selects/synthesizes the final trades; trades are then executed and (optionally) backtested.
 
@@ -42,8 +42,8 @@ Pipeline is strictly sequential; each stage's output feeds the next (`main()` in
 
 ## Critical Patterns
 
-- **Buffett tools are no-arg closures.** Each analysis tool takes `summary: FinancialSummary`; passing that through LangChain's tool schema confuses the model. They're wrapped as no-arg closures over the ticker's summary (`warren_buffet_agent.py`). Preserve this when editing analysts.
-- **Native tool-calling is required** (keeps the project agentic). On Bedrock this means **Claude** (or Mistral) — DeepSeek and Qwen3 do **not** support tool-use via the Converse API. Don't switch the workhorse to a model lacking Converse tool support.
+- **LLM only where there's judgment.** Data gathering (research) and the 8 Buffett analyzers are deterministic Python — no LLM. The LLM is reserved for: the Buffett *signal synthesis*, the Portfolio Manager allocation, the What-If pushback, and the Final Orchestrator. Don't reintroduce an LLM loop to orchestrate deterministic fetches/scorers.
+- **Native tool-calling** is still used by the genuinely agentic debate agents (PM/Monitor) via `bind_tools`. On Bedrock this means **Claude** (or Mistral) — DeepSeek and Qwen3 do **not** support tool-use via the Converse API. Don't switch the workhorse to a model lacking Converse tool support.
 - **Structured output** via Pydantic `with_structured_output`. `what_if_agent.py` and `final_orchestrator_agent.py` historically hand-parsed ```json``` strings — prefer structured output there.
 - **Backtesting data leakage** is a known hazard: the legacy single-point backtest fetched prices without `end_date` (today's price) and had broken date filters. The restructure adds a **point-in-time cache** (`backtesting/`) that masks all data to `≤ cutoff`; agent-facing reads must never see the future. Mark-to-market/execution may use future prices (that's "the truth", not an agent input).
 - **No persistent caching of API data yet** (being added in the restructure). Don't assume calls are memoized.
