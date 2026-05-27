@@ -101,42 +101,99 @@ def _trades_str(trades: list[dict] | None) -> str:
                      for t in trades if isinstance(t, dict))
 
 
-def _render_day(cutoff: str, signals: dict, history: list[dict], final: dict) -> None:
-    """Print the full per-day agent narrative (signals + debate + decision)."""
+def _render_day(cutoff: str, signals: dict, history: list[dict], final: dict,
+                console=None) -> None:
+    """Print the full per-day agent narrative — signals, the complete PM → Monitor
+    → What-If debate (every agent's full text, no truncation), and the Orchestrator's
+    decision — so a run can be read end-to-end and judged for sound reasoning.
+
+    ``console`` defaults to the shared Rich console; tests pass a recording one.
+    """
     from rich import box
     from rich.panel import Panel
     from rich.table import Table
 
-    from shared_console import console
+    if console is None:
+        from shared_console import console
 
     console.rule(f"[bold cyan]{cutoff} — agent reasoning[/bold cyan]")
 
-    # Signals table (the per-stock Buffett conviction + why).
+    # Buffett signals: a compact verdict table, then each ticker's FULL reasoning
+    # (a cramped table column truncated it; a panel folds it readably).
     st = Table(title="Warren Buffett signals", box=box.ROUNDED, show_lines=False)
     st.add_column("Ticker", style="cyan")
     st.add_column("Signal")
     st.add_column("Conf", justify="right")
-    st.add_column("Reasoning", overflow="fold")
     for tk, s in (signals or {}).items():
         sig = str(s.get("signal", "")).upper()
         color = {"BULLISH": "green", "BEARISH": "red"}.get(sig, "yellow")
-        st.add_row(tk, f"[{color}]{sig}[/{color}]", str(s.get("confidence", "")),
-                   (s.get("reasoning", "") or "")[:240])
+        st.add_row(tk, f"[{color}]{sig}[/{color}]", str(s.get("confidence", "")))
     console.print(st)
+    for tk, s in (signals or {}).items():
+        why = (s.get("reasoning") or "").strip()
+        if why:
+            console.print(Panel(why, title=f"{tk} — Buffett reasoning", title_align="left",
+                                border_style="cyan", padding=(0, 1)))
 
-    # The PM → Monitor → What-If debate, round by round.
+    # The PM → Monitor → What-If debate, round by round — full text, no truncation.
+    console.rule("[bold]Debate — Portfolio Manager → Monitor → What-If[/bold]", style="dim")
     for h in history:
-        i = h.get("iteration")
-        pm = (h.get("pm_proposal") or {}).get("proposed_trades", [])
-        mon = h.get("monitor_check") or {}
-        wi = h.get("what_if_critique") or {}
-        valid = "[green]valid[/green]" if mon.get("is_valid") else "[red]violations[/red]"
-        console.print(f"[bold]Iter {i}[/bold]  PM: {_trades_str(pm)}  |  Monitor: {valid}")
-        crit = wi.get("critique")
-        if crit:
-            console.print(f"   [magenta]What-If:[/magenta] {str(crit)[:240]}")
+        _render_iteration(console, h)
 
-    # The Final Orchestrator's decision + reasoning.
+    # The Final Orchestrator's decision + full reasoning.
     reasoning = final.get("final_decision_reasoning") or final.get("reasoning") or "(none)"
-    console.print(Panel(str(reasoning), title="Final decision", border_style="green", padding=(0, 1)))
+    console.print(Panel(str(reasoning), title="Final decision", border_style="green",
+                        title_align="left", padding=(0, 1)))
     console.print(f"[bold]Final trades:[/bold] {_trades_str(final.get('final_trades', []))}")
+
+
+def _render_iteration(console, h: dict) -> None:
+    """Render one debate round as a labelled panel: what the PM proposed and why,
+    what the Monitor found (with concrete violations), and the What-If challenge
+    (full critique + the alternative it puts forward). Nothing truncated."""
+    from rich.panel import Panel
+    from rich.table import Table
+
+    i = h.get("iteration")
+    pm = h.get("pm_proposal") or {}
+    mon = h.get("monitor_check") or {}
+    wi = h.get("what_if_critique") or {}
+
+    # Portfolio Manager: trades + per-trade rationale notes.
+    pm_lines = [f"[bold]proposes:[/bold] {_trades_str(pm.get('proposed_trades') or [])}"]
+    pm_lines += [f"  • {n}" for n in (pm.get("notes") or [])]
+
+    # Monitor: validity + the concrete constraint violations / cash summary.
+    if mon.get("is_valid"):
+        mon_lines = ["[green]VALID[/green] — no constraint violations"]
+    else:
+        mon_lines = ["[red]VIOLATIONS[/red]"]
+        mon_lines += [f"  ✗ [red]{v.get('type')}[/red] {v.get('ticker')}: {v.get('detail')}"
+                      for v in (mon.get("violations") or [])]
+    mon_lines += [f"  • {n}" for n in (mon.get("notes") or [])]
+
+    # What-If: full critique + the concrete alternative + its reasoning.
+    wi_lines: list[str] = []
+    crit = (wi.get("critique") or "").strip()
+    if crit:
+        wi_lines.append(crit)
+        alt = wi.get("alternative_scenario") or {}
+        if isinstance(alt, dict):
+            if alt.get("description"):
+                wi_lines.append(f"[magenta]alternative:[/magenta] {alt['description']}")
+            if alt.get("proposed_trades"):
+                wi_lines.append(f"[magenta]proposes:[/magenta] {_trades_str(alt['proposed_trades'])}")
+        why = (wi.get("reasoning") or "").strip()
+        if why and why != crit:
+            wi_lines.append(f"[dim]why:[/dim] {why}")
+    else:
+        wi_lines.append("[dim](no challenge — PM proposal accepted, or final iteration)[/dim]")
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(justify="right", style="bold", no_wrap=True)
+    grid.add_column(overflow="fold")
+    grid.add_row("[green]Portfolio Mgr[/green]", "\n".join(pm_lines))
+    grid.add_row("[blue]Monitor[/blue]", "\n".join(mon_lines))
+    grid.add_row("[magenta]What-If[/magenta]", "\n".join(wi_lines))
+    console.print(Panel(grid, title=f"Iteration {i}", title_align="left",
+                        border_style="dim", padding=(0, 1)))
