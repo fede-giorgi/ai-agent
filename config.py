@@ -14,6 +14,12 @@ TOTAL_ITERATIONS_DEBUG: int = 3
 # Tickers used in --debug mode and as the "default" preset
 DEFAULT_TICKERS: list[str] = ["AAPL", "MSFT", "NVDA", "GOOGL", "META"]
 
+# Max concurrent per-ticker analyst LLM calls (signal synthesis). Caps the
+# asyncio fan-out so a large screened universe doesn't trip Bedrock's
+# per-minute throttling; small universes still run fully in parallel.
+# 0 = unbounded (plain gather).
+MAX_ANALYST_CONCURRENCY: int = 6
+
 # ── Backtesting benchmarks ────────────────────────────────────────────────────
 
 # US 3-month T-bill rate used as the risk-free benchmark.
