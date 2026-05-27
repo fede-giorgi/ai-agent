@@ -21,7 +21,13 @@ from rich.text import Text
 
 from classes.financial_summary import FinancialSummary
 from classes.tickers import TICKERS
-from config import DEFAULT_TICKERS, RISK_FREE_ANNUAL, TOTAL_ITERATIONS, TOTAL_ITERATIONS_DEBUG
+from config import (
+    DEFAULT_TICKERS,
+    MAX_ITERATIONS,
+    MAX_ITERATIONS_DEMO,
+    RISK_FREE_ANNUAL,
+)
+from convergence import convergence_reason, has_converged
 
 console = Console()
 
@@ -746,30 +752,51 @@ def main():
     Entry-point for the AI Hedge Fund simulation.
 
     Flow:
-    1. Parse CLI flags (--debug).
+    1. Parse run mode: normal (interactive) | demo (fast preset) | dev (walk-forward harness).
     2. Check installed dependencies.
     3. Gather user inputs: capital, portfolio, risk, tickers, LLM, backtesting date.
     4. Run Research Agent → Warren Buffett Agent.
-    5. Run 10-iteration portfolio debate loop (PM → Monitor → What-If).
+    5. Run the adaptive debate loop (PM → Monitor → What-If) with deterministic early stopping.
     6. Summarise history and run Final Orchestrator.
     7. Execute trades and optionally run backtesting comparison.
     """
     load_dotenv()
     start_time = time.time()
-    debug_mode = "--debug" in sys.argv
+    # Run mode: normal (interactive) | demo (fast preset for live demos / quick
+    # backtests) | dev (full 3-month walk-forward, meant for EC2).
+    # --debug is kept as a deprecated alias for --demo.
+    if "--dev" in sys.argv:
+        mode = "dev"
+    elif "--demo" in sys.argv or "--debug" in sys.argv:
+        mode = "demo"
+    else:
+        mode = "normal"
+    is_demo = mode == "demo"
     console.record = True
 
+    # dev mode delegates to the walk-forward backtesting harness (Phase 2).
+    if mode == "dev":
+        try:
+            from backtesting.run_backtest import main as run_backtest_main
+        except ImportError:
+            console.print(
+                "[yellow]dev mode (3-month walk-forward backtest) isn't built yet — Phase 2.\n"
+                "Run the default (normal) mode or --demo for now.[/yellow]"
+            )
+            return
+        return run_backtest_main()
+
     console.print(Panel(
-        "[bold]Welcome to the Financial Agent[/bold]\n[dim]Warren Buffett-style multi-agent hedge fund simulation[/dim]",
+        "[bold]Welcome to the Agentic AI Hedge Fund[/bold]\n[dim]Warren Buffett-style multi-agent hedge fund simulation[/dim]",
         box=box.DOUBLE, border_style="green", padding=(1, 4), expand=False
     ))
 
-    if debug_mode:
-        console.print("[bold red]DEBUG MODE ENABLED[/bold red]")
+    if is_demo:
+        console.print("[bold cyan]DEMO MODE[/bold cyan] [dim]— fast preset for live demos / quick backtests[/dim]")
         if not check_dependencies():
             sys.exit(1)
         capital = 100000
-        risk_profile = 8  # aggressive in debug so trades are exercised
+        risk_profile = 8  # aggressive in demo so trades are exercised
         backtesting_date = (datetime.today() - timedelta(days=90)).strftime('%Y-%m-%d')
         portfolio = {}
         llm_provider = os.getenv("LLM_PROVIDER", "google")
@@ -793,12 +820,12 @@ def main():
     console.print(Panel("[bold]Starting Financial Analysis[/bold]",
                         box=box.ROUNDED, border_style="green", expand=False, padding=(0, 2)))
 
-    if debug_mode:
+    if is_demo:
         tickers_to_research = DEFAULT_TICKERS
     else:
         tickers_to_research = get_tickers_to_research()
 
-    if not debug_mode:
+    if not is_demo:
         portfolio = get_portfolio(capital, tickers_to_research)
 
     console.print(f"Researching {len(tickers_to_research)} tickers...")
@@ -829,7 +856,7 @@ def main():
                 console.print(f"  [red]✗ {ticker}: no signal returned[/red]")
         return signals
 
-    warren_buffett_signals = asyncio.run(_run_warren_buffett_all(financial_data, debug_mode))
+    warren_buffett_signals = asyncio.run(_run_warren_buffett_all(financial_data, is_demo))
     console.print("Warren Buffett analysis complete.")
 
     price_map = {
@@ -860,7 +887,9 @@ def main():
     initial_portfolio = portfolio.copy()
     initial_capital = capital
 
-    total_iterations = TOTAL_ITERATIONS_DEBUG if debug_mode else TOTAL_ITERATIONS
+    # Effort is adaptive: run up to max_iterations rounds but stop early once the
+    # debate has converged (deterministic stability — see convergence.has_converged).
+    max_iterations = MAX_ITERATIONS_DEMO if is_demo else MAX_ITERATIONS
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -868,10 +897,10 @@ def main():
         TaskProgressColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Trading iterations", total=total_iterations)
-        for i in range(1, total_iterations + 1):
-            progress.update(task, description=f"Iteration {i}/{total_iterations}")
-            console.rule(f"[bold yellow]Iteration {i}/{total_iterations}[/bold yellow]")
+        task = progress.add_task("Trading iterations", total=max_iterations)
+        for i in range(1, max_iterations + 1):
+            progress.update(task, description=f"Iteration {i}/{max_iterations}")
+            console.rule(f"[bold yellow]Iteration {i}/{max_iterations}[/bold yellow]")
 
             print_signals_table(warren_buffett_signals)
             print_portfolio_state(initial_portfolio, initial_capital, price_map,
@@ -881,21 +910,21 @@ def main():
             _section("Portfolio Manager")
             pm_output = run_portfolio_manager_agent(
                 initial_portfolio, initial_capital, risk_profile, warren_buffett_signals,
-                price_map, i, total_iterations, history, force_trades=debug_mode,
+                price_map, i, max_iterations, history, force_trades=is_demo,
             )
             proposed_trades = pm_output.get("proposed_trades", [])
             print_trades_table(proposed_trades, price_map, title="PROPOSED TRADES:")
 
             # Monitor
             _section("Monitor Agent", "green")
-            monitor_output = run_monitor_agent(proposed_trades, initial_portfolio, initial_capital, price_map, i, total_iterations, history)
+            monitor_output = run_monitor_agent(proposed_trades, initial_portfolio, initial_capital, price_map, i, max_iterations, history)
             print_monitor_result(monitor_output)
 
             # What-If (skip on last iteration)
             what_if_output = {}
-            if i < total_iterations:
+            if i < max_iterations:
                 _section("What-If Agent", "magenta")
-                what_if_output = run_what_if_agent(initial_portfolio, initial_capital, proposed_trades, price_map, i, total_iterations, warren_buffett_signals, history)
+                what_if_output = run_what_if_agent(initial_portfolio, initial_capital, proposed_trades, price_map, i, max_iterations, warren_buffett_signals, history)
                 alt = what_if_output.get("alternative_scenario", {}) or {}
                 counter_trades = alt.get("proposed_trades", []) if isinstance(alt, dict) else []
                 print_trades_table(counter_trades, price_map, title="COUNTER-PROPOSAL:")
@@ -916,6 +945,12 @@ def main():
             }
             history.append(iteration_data)
             progress.advance(task)
+
+            # Deterministic early stop: stable proposals + clean monitor + settled challenge.
+            if has_converged(history):
+                console.print(f"[bold green]✓ {convergence_reason(history)} — stopping early.[/bold green]")
+                progress.update(task, completed=max_iterations)
+                break
 
     # --- History Compression ---
     console.rule("[bold yellow]Compressing History[/bold yellow]")

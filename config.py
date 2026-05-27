@@ -31,3 +31,13 @@ WORKHORSE_MODEL: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 # Quality-critical, low-volume: Warren Buffett signal + Final Orchestrator.
 # TODO: confirm the exact Sonnet 4.6 date stamp via list-inference-profiles.
 JUDGE_MODEL: str = "us.anthropic.claude-sonnet-4-6-20250929-v1:0"
+
+# ── Debate loop: deterministic convergence stopping ─────────────────────────
+# Replaces the fixed iteration count. The loop stops early once the Portfolio
+# Manager's proposed trades are stable, the Monitor is clean, and the What-If
+# challenge is settled (see convergence.py). MAX_* are hard caps.
+MIN_ITERATIONS: int = 2          # always run at least this many rounds
+MAX_ITERATIONS: int = 10         # hard cap (normal / dev modes)
+MAX_ITERATIONS_DEMO: int = 3     # hard cap in demo mode (fast)
+STABILITY_PATIENCE: int = 2      # consecutive unchanged rounds to call it stable
+SHARE_STABILITY_TOLERANCE: float = 0.02   # ±2% share wiggle still counts as "same"
