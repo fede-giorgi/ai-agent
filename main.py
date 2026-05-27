@@ -844,8 +844,11 @@ def main():
     console.rule("[bold yellow]Warren Buffett Analysis[/bold yellow]")
 
     async def _run_warren_buffett_all(data: dict, dbg: bool) -> dict:
+        from async_utils import bounded_gather
+        from config import MAX_ANALYST_CONCURRENCY
         tasks = [warren_buffett_agent(s, debug_mode=dbg) for s in data.values()]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await bounded_gather(*tasks, limit=MAX_ANALYST_CONCURRENCY,
+                                       return_exceptions=True)
         signals = {}
         for ticker, result in zip(data.keys(), results):
             if isinstance(result, Exception):
