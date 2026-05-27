@@ -18,6 +18,52 @@ def _text(content) -> str:
     return content if isinstance(content, str) else str(content)
 
 
+def _trade(t: dict) -> dict:
+    return {"action": t.get("action"), "ticker": t.get("ticker"), "shares": t.get("shares")}
+
+
+def compact_history(history: list[dict]) -> list[dict]:
+    """Strip the debate down to decision-relevant fields (trades, validity, the
+    What-If critique) — keeps the cross-iteration consensus view the orchestrator
+    needs while removing the verbose PM notes/reasoning blobs that bloated the
+    prompt to millions of tokens on non-converging days."""
+    out = []
+    for h in history:
+        pm = (h.get("pm_proposal") or {}).get("proposed_trades", []) or []
+        mon = h.get("monitor_check") or {}
+        wi = h.get("what_if_critique") or {}
+        alt = wi.get("alternative_scenario") or {}
+        alt_trades = alt.get("proposed_trades", []) if isinstance(alt, dict) else []
+        out.append({
+            "iteration": h.get("iteration"),
+            "pm_trades": [_trade(t) for t in pm if isinstance(t, dict)],
+            "monitor_valid": bool(mon.get("is_valid", False)),
+            "what_if_critique": (wi.get("critique") or "")[:300],
+            "what_if_alt_trades": [_trade(t) for t in alt_trades if isinstance(t, dict)],
+        })
+    return out
+
+
+def _last_valid_trades(history: list[dict]) -> list[dict]:
+    """The most recent Monitor-approved PM proposal — a safe fallback if parsing fails."""
+    for h in reversed(history):
+        if (h.get("monitor_check") or {}).get("is_valid"):
+            return (h.get("pm_proposal") or {}).get("proposed_trades", []) or []
+    return []
+
+
+def _extract_json(s: str) -> str:
+    """Pull the JSON object out of an LLM reply (handles ```json fences and prose)."""
+    s = s.strip()
+    if s.startswith("```"):
+        s = s[3:]
+        if s[:4].lower() == "json":
+            s = s[4:]
+        s = s.split("```", 1)[0]
+    start, end = s.find("{"), s.rfind("}")
+    return s[start:end + 1] if (start != -1 and end > start) else s
+
+
 def run_final_orchestrator_agent(
     initial_portfolio: dict[str, int],
     initial_capital: float,
@@ -89,23 +135,27 @@ Output JSON ONLY:
         - Initial Capital: {initial_capital}
         - Warren Buffett Signals: {json.dumps(warren_signals)}
         - Price Map: {json.dumps(price_map)}
-        - Iteration History (The debate): {json.dumps(history)}
+        - Iteration History (compacted debate): {json.dumps(compact_history(history))}
         """
     )
-    
+
     response = llm.invoke([system_message, human_message])
     try:
-        content = _text(response.content).strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.endswith("```"):
-            content = content[:-3]
-        return json.loads(content)
-    except json.JSONDecodeError:
+        parsed = json.loads(_extract_json(_text(response.content)))
+        if not isinstance(parsed, dict):
+            raise ValueError("orchestrator response was not a JSON object")
+        parsed.setdefault("agent", "final_orchestrator")
+        parsed.setdefault("final_trades", [])
+        return parsed
+    except (json.JSONDecodeError, ValueError):
+        # Don't silently produce "no trades" — fall back to the debate's last
+        # Monitor-approved proposal so a parse glitch never nukes the day.
+        fallback = _last_valid_trades(history)
         return {
             "agent": "final_orchestrator",
-            "final_decision_reasoning": "Error parsing LLM response",
-            "final_trades": []
+            "final_decision_reasoning": ("Orchestrator response could not be parsed; "
+                                         "defaulted to the last Monitor-valid PM proposal."),
+            "final_trades": fallback,
         }
 
 def generate_ascii_chart(history: list[dict]) -> Table:
