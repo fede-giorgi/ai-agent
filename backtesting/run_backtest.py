@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime, timedelta
 
@@ -72,7 +73,9 @@ def main(argv: list[str] | None = None) -> BacktestReport:
                                 description="Walk-forward (no-refit) backtest")
     p.add_argument("--start", help="YYYY-MM-DD (default: ~95 days before end)")
     p.add_argument("--end", help="YYYY-MM-DD (default: today)")
-    p.add_argument("--tickers", help="comma-separated; default = config.DEFAULT_TICKERS")
+    p.add_argument("--tickers", nargs="+", metavar="TICKER",
+                   help="space- and/or comma-separated, e.g. `AAPL,MSFT NVDA` or "
+                        "`AAPL, MSFT, NVDA`; default = config.DEFAULT_TICKERS")
     p.add_argument("--capital", type=float, default=config.INITIAL_CAPITAL)
     p.add_argument("--risk", type=int, default=config.RISK_PROFILE)
     p.add_argument("--max-iters", type=int, default=MAX_ITERATIONS)
@@ -115,8 +118,14 @@ def main(argv: list[str] | None = None) -> BacktestReport:
 
     end = args.end or datetime.today().strftime("%Y-%m-%d")
     start = args.start or (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=95)).strftime("%Y-%m-%d")
-    universe = ([t.strip().upper() for t in args.tickers.split(",") if t.strip()]
-                if args.tickers else list(DEFAULT_TICKERS))
+    # Accept any mix of spaces and commas: "AAPL,MSFT", "AAPL MSFT", "AAPL, MSFT".
+    # (nargs="+" already collected the space-separated tokens; we also split on
+    # commas and dedupe, so a stray "AAPL, MSFT" no longer silently drops names.)
+    if args.tickers:
+        universe = list(dict.fromkeys(
+            t.upper() for t in re.split(r"[,\s]+", " ".join(args.tickers)) if t))
+    else:
+        universe = list(DEFAULT_TICKERS)
 
     max_sessions = None
     if args.debug:
@@ -126,6 +135,12 @@ def main(argv: list[str] | None = None) -> BacktestReport:
                       "(verifies the pipeline before a full backtest)[/dim]")
 
     console.rule("[bold green]Agentic AI Hedge Fund — Walk-Forward Backtest[/bold green]")
+    console.print(f"[bold]Universe ({len(universe)}):[/bold] {', '.join(universe)}  "
+                  f"[dim]| {start} → {end} | risk {args.risk} | capital ${args.capital:,.0f}[/dim]")
+    stray = [u for u in _unknown if u not in ("--dev", "--demo", "--debug")]
+    if stray:
+        console.print(f"[yellow]⚠ Ignored unrecognized args: {' '.join(stray)} "
+                      f"— did you put spaces in --tickers? (it accepts them now)[/yellow]")
     cache = PiTDataCache(universe, start, end).build(force=args.rebuild_cache, log=console.print)
 
     # Optional: screen a large universe down to the top-K candidates (as-of the
