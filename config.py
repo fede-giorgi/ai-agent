@@ -37,7 +37,7 @@ JUDGE_MODEL: str = "us.anthropic.claude-sonnet-4-6"
 # Manager's proposed trades are stable, the Monitor is clean, and the What-If
 # challenge is settled (see convergence.py). MAX_* are hard caps.
 MIN_ITERATIONS: int = 2          # always run at least this many rounds
-MAX_ITERATIONS: int = 10         # hard cap (normal / dev modes)
+MAX_ITERATIONS: int = 6          # hard cap (normal / dev modes) — caps non-convergence cost
 MAX_ITERATIONS_DEMO: int = 3     # hard cap in demo mode (fast)
 STABILITY_PATIENCE: int = 2      # consecutive unchanged rounds to call it stable
 SHARE_STABILITY_TOLERANCE: float = 0.02   # ±2% share wiggle still counts as "same"
