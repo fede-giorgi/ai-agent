@@ -20,3 +20,11 @@ financial_agent_session.txt
 
 # Backtesting point-in-time data cache (downloaded once, not source)
 .bt_cache/
+
+# Pytest cache
+.pytest_cache/
+
+# Backtest outputs (charts, logs) — artifacts, not source
+outputs/
+backtest_*.png
+run_*.log

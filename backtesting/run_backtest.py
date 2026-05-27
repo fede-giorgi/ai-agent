@@ -10,6 +10,7 @@ piped/EC2 logs); the final report uses Rich tables (auto-plain when not a TTY).
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime, timedelta
 
 from rich import box
@@ -80,6 +81,8 @@ def main(argv: list[str] | None = None) -> BacktestReport:
                    help="smoke test: first ticker only, first 2 sessions — verify it runs before a full backtest")
     p.add_argument("--verbose", action="store_true",
                    help="render each RUN day's signals table, PM/Monitor/What-If debate, and Orchestrator reasoning")
+    p.add_argument("--out-dir", default="outputs",
+                   help="folder for charts/outputs (created if missing; git-ignored)")
     p.add_argument("--no-plot", dest="plot", action="store_false", help="skip the equity-curve PNG")
     p.set_defaults(plot=True)
     p.add_argument("--rebuild-cache", action="store_true")
@@ -123,9 +126,11 @@ def main(argv: list[str] | None = None) -> BacktestReport:
     if spark:
         console.print(f"[dim]agent equity:[/dim] {spark}")
     if args.plot:
-        path = save_report_chart(report)
+        os.makedirs(args.out_dir, exist_ok=True)
+        chart_path = os.path.join(args.out_dir, f"backtest_{start}_to_{end}.png")
+        path = save_report_chart(report, path=chart_path)
         if path:
-            console.print(f"[green]Chart saved → {path}[/green]")
+            console.print(f"[green]Chart saved → {os.path.abspath(path)}[/green]")
         else:
             console.print("[dim](chart skipped — matplotlib unavailable or curve too short)[/dim]")
     return report
