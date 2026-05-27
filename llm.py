@@ -41,14 +41,71 @@ _COST_PER_1M: dict[str, dict[str, float]] = {
 }
 
 
-class _TokenUsageCallback(BaseCallbackHandler):
-    """Accumulates token usage across all LLM calls in a session."""
+def _rates_for(model: str | None) -> dict[str, float] | None:
+    """Resolve pricing for a model id. Bedrock inference-profile ids are long
+    (e.g. "us.anthropic.claude-haiku-4-5-...-v1:0"), so match the longest pricing
+    key that is a substring of the id."""
+    if not model:
+        return None
+    if model in _COST_PER_1M:
+        return _COST_PER_1M[model]
+    candidates = [k for k in _COST_PER_1M if k in model]
+    return _COST_PER_1M[max(candidates, key=len)] if candidates else None
+
+
+class _UsageAggregator:
+    """Accumulates token usage **per model** across a session.
+
+    A tiered run mixes the Haiku workhorse with the Sonnet judge; pricing every
+    token at a single rate (whichever model was created last) over-states the
+    bill — e.g. costing all tokens at Sonnet's rate when most calls were Haiku.
+    Bucketing by model lets each tier be priced at its own rate.
+    """
 
     def __init__(self):
-        self._input_tokens = 0
-        self._output_tokens = 0
-        self._calls = 0
-        self._model: str | None = None
+        self._by_model: dict[str, dict[str, int]] = {}
+
+    def record(self, model: str | None, input_tokens: int, output_tokens: int) -> None:
+        bucket = self._by_model.setdefault(
+            model or "unknown", {"input": 0, "output": 0, "calls": 0})
+        bucket["input"] += input_tokens
+        bucket["output"] += output_tokens
+        bucket["calls"] += 1
+
+    def summary(self, model: str | None = None) -> dict:
+        # `model` is accepted for backward compatibility but no longer needed for
+        # costing — each tier is now priced from its own bucket.
+        in_tok = out_tok = calls = 0
+        cost = 0.0
+        cost_known = False
+        for m, b in self._by_model.items():
+            in_tok += b["input"]
+            out_tok += b["output"]
+            calls += b["calls"]
+            rates = _rates_for(m)
+            if rates is not None:
+                cost += (b["input"]  / 1_000_000 * rates["input"] +
+                         b["output"] / 1_000_000 * rates["output"])
+                cost_known = True
+        return {
+            "calls":         calls,
+            "input_tokens":  in_tok,
+            "output_tokens": out_tok,
+            "total_tokens":  in_tok + out_tok,
+            "estimated_cost_usd": cost if cost_known else None,
+            "model": model or ", ".join(sorted(self._by_model)) or None,
+            "by_model": {m: dict(b) for m, b in self._by_model.items()},
+        }
+
+
+class _TokenUsageCallback(BaseCallbackHandler):
+    """Per-LLM callback that records each call's tokens against its own model id
+    in the shared aggregator. One instance is attached per ``get_llm()`` so the
+    Haiku and Sonnet tiers stay distinct in the accounting."""
+
+    def __init__(self, aggregator: "_UsageAggregator", model: str | None):
+        self._aggregator = aggregator
+        self._model = model
 
     def on_llm_end(self, response: LLMResult, **kwargs):
         for gen_list in response.generations:
@@ -57,47 +114,25 @@ class _TokenUsageCallback(BaseCallbackHandler):
                 if msg is not None:
                     meta = getattr(msg, "usage_metadata", None)
                     if meta:
-                        self._input_tokens += meta.get("input_tokens", 0)
-                        self._output_tokens += meta.get("output_tokens", 0)
-                        self._calls += 1
-
-    def summary(self, model: str | None = None) -> dict:
-        m = model or self._model
-        cost = None
-        rates = _COST_PER_1M.get(m) if m else None
-        if rates is None and m:
-            # Bedrock profile ids are long (e.g. "us.anthropic.claude-haiku-4-5-...-v1:0");
-            # match the longest pricing key that is a substring of the model id.
-            candidates = [k for k in _COST_PER_1M if k in m]
-            if candidates:
-                rates = _COST_PER_1M[max(candidates, key=len)]
-        if rates is not None:
-            cost = (
-                self._input_tokens  / 1_000_000 * rates["input"] +
-                self._output_tokens / 1_000_000 * rates["output"]
-            )
-        return {
-            "calls":         self._calls,
-            "input_tokens":  self._input_tokens,
-            "output_tokens": self._output_tokens,
-            "total_tokens":  self._input_tokens + self._output_tokens,
-            "estimated_cost_usd": cost,
-            "model": m,
-        }
+                        self._aggregator.record(
+                            self._model,
+                            meta.get("input_tokens", 0),
+                            meta.get("output_tokens", 0),
+                        )
 
 
-# Module-level singleton — shared across all agents in a session
-_tracker = _TokenUsageCallback()
+# Module-level singleton aggregator — shared across all agents in a session.
+_aggregator = _UsageAggregator()
 
 
 def get_usage_summary(model: str | None = None) -> dict:
-    """Returns aggregated token usage for the current session."""
-    return _tracker.summary(model)
+    """Returns aggregated token usage (priced per model tier) for the session."""
+    return _aggregator.summary(model)
 
 
 def format_usage_line(model: str | None = None) -> str:
     """One-line running token/cost view for live progress display."""
-    u = _tracker.summary(model)
+    u = _aggregator.summary(model)
     cost = u["estimated_cost_usd"]
     cost_s = f"~${cost:.4f}" if cost is not None else "cost n/a"
     return (f"{u['input_tokens']:,} in / {u['output_tokens']:,} out tok | "
@@ -136,9 +171,8 @@ def get_llm(provider: str | None = None, model: str | None = None):
                 "Install it with: pip install langchain-anthropic"
             ) from exc
         resolved_model = model or _ANTHROPIC_DEFAULT
-        _tracker._model = resolved_model
         return ChatAnthropic(model=resolved_model, temperature=0, max_retries=2,
-                             callbacks=[_tracker])
+                             callbacks=[_TokenUsageCallback(_aggregator, resolved_model)])
 
     if provider == "bedrock":
         try:
@@ -151,7 +185,6 @@ def get_llm(provider: str | None = None, model: str | None = None):
         resolved_model = model or _BEDROCK_DEFAULT
         region = os.getenv("BEDROCK_REGION") or os.getenv("AWS_REGION", "us-east-2")
         max_tokens = int(os.getenv("BEDROCK_MAX_TOKENS", "8192"))
-        _tracker._model = resolved_model
         # Native Converse tool-calling + with_structured_output work for Claude.
         # Reasoning is OFF by default (opt-in via additional_model_request_fields) — keep it
         # off to control output-token cost.
@@ -160,18 +193,17 @@ def get_llm(provider: str | None = None, model: str | None = None):
             region_name=region,
             temperature=0,
             max_tokens=max_tokens,
-            callbacks=[_tracker],
+            callbacks=[_TokenUsageCallback(_aggregator, resolved_model)],
         )
 
     resolved_model = model or _GOOGLE_DEFAULT
-    _tracker._model = resolved_model
     return ChatGoogleGenerativeAI(
         model=resolved_model,
         temperature=0,
         max_tokens=None,
         timeout=None,
         max_retries=2,
-        callbacks=[_tracker],
+        callbacks=[_TokenUsageCallback(_aggregator, resolved_model)],
     )
 
 
